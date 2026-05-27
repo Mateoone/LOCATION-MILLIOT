@@ -1,0 +1,48 @@
+{
+  "entities": {
+    "Voyageur": {
+      "title": "Voyageur",
+      "description": "Un voyageur client de nos locations",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID unique du voyageur"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nom et prénom du locataire"
+        },
+        "email": {
+          "type": "string",
+          "description": "Adresse e-mail de contact"
+        },
+        "phone": {
+          "type": "string",
+          "description": "Numéro de téléphone"
+        },
+        "biography": {
+          "type": "string",
+          "description": "Note d'historique de séjour, provenance et statut"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp de création"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "Timestamp de modification"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  "firestore": {
+    "/voyageurs/{id}": {
+      "schema": "Voyageur",
+      "description": "Collection de fiches locataires partagées entre Hélène et Matthieu"
+    }
+  }
+}

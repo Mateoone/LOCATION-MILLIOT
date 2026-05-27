@@ -1,0 +1,6 @@
+{
+  "name": "Gestionnaire Locations M",
+  "description": "Application de gestion des locations de maisons avec synchronisation Google Sheets et calendrier de réservations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

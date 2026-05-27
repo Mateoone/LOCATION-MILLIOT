@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default safety catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidVoyageur(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() <= 128;
+    }
+
+    match /voyageurs/{id} {
+      allow read, list: if isSignedIn();
+      allow write, create, update: if isSignedIn() && isValidVoyageur(request.resource.data);
+      allow delete: if isSignedIn();
+    }
+  }
+}
