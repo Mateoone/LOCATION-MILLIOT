@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { SheetData, ReservationRow, SheetLocation } from '../lib/sheets';
-import { parse, isValid, format, differenceInDays, addDays, isSameDay } from 'date-fns';
+import { parse, isValid, format, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, User, Users, Compass } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { IcalEvent } from '../lib/ical';
 
 interface AnnualCalendarProps {
@@ -22,8 +22,7 @@ interface UnifiedBooking {
 }
 
 export function AnnualCalendar({ data, location, externalEvents, onCellClick }: AnnualCalendarProps) {
-  // Current local time year is 2026
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [selectedYear, setSelectedYear] = useState<number>(() => new Date().getFullYear());
 
   // Parse Google Sheets data into typed reservation events
   const startHeader = useMemo(() => {
@@ -100,26 +99,6 @@ export function AnnualCalendar({ data, location, externalEvents, onCellClick }: 
 
     return list;
   }, [data.rows, startHeader, endHeader, nameHeader, sourceHeader, externalEvents]);
-
-  // Determine dynamic price parameters based on the property location
-  const getBasePrice = (date: Date, loc: SheetLocation) => {
-    const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6; // Saturday, Sunday nights are weekend priced
-    const month = date.getMonth(); // 0 = Jan, 2 = Mar...
-
-    // Summer/spring season bump for weekends (March to October matches the attached screenshot price variation)
-    const isHighSeason = month >= 2 && month <= 9;
-
-    switch (loc) {
-      case 'HAUT':
-        return isWeekend ? (isHighSeason ? 429 : 390) : 250;
-      case 'BAS':
-        return isWeekend ? (isHighSeason ? 310 : 280) : 180;
-      case 'PORTIVY':
-        default:
-          return isWeekend ? (isHighSeason ? 380 : 340) : 220;
-    }
-  };
 
   // Switch years
   const handlePrevYear = () => setSelectedYear(prev => prev - 1);
@@ -296,7 +275,6 @@ export function AnnualCalendar({ data, location, externalEvents, onCellClick }: 
                         const dayNum = day.getDate();
                         const isWeekend = dIdx === 5 || dIdx === 6; // Saturdays and Sundays
                         const booking = getBookingForDay(day);
-                        const price = getBasePrice(day, location);
 
                         return (
                           <div 

@@ -96,7 +96,7 @@ export async function createGoogleContact(
   accessToken: string,
   contact: { name: string; email?: string; phone?: string; biography?: string; groupResourceName?: string }
 ): Promise<GoogleContact> {
-  const id = contact.name.trim().toLowerCase().replace(/[^a-z0-0a-zA-Z_-]/g, "_");
+  const id = contact.name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_");
   const path = `voyageurs/${id}`;
   try {
     const docRef = doc(db, "voyageurs", id);

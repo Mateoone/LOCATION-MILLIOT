@@ -1,4 +1,4 @@
-import { getAccessToken } from "./auth";
+import { authorizedFetch } from "./auth";
 
 const SPREADSHEET_ID = "1VVVMkx9Woqxvfs8u7IWWfWwxz_kJ7h4OD9s5oC4u2ts";
 
@@ -16,12 +16,8 @@ export interface SheetData {
 }
 
 export async function fetchSheetData(location: SheetLocation): Promise<SheetData> {
-  const token = await getAccessToken();
-  if (!token) throw new Error("Not authenticated");
-
-  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(location)}`, {
-    headers: { 
-      Authorization: `Bearer ${token}`,
+  const res = await authorizedFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(location)}`, {
+    headers: {
       'Cache-Control': 'no-cache',
       'Pragma': 'no-cache'
     },
@@ -73,13 +69,9 @@ export async function addSheetRow(
   location: SheetLocation,
   values: string[]
 ) {
-  const token = await getAccessToken();
-  if (!token) throw new Error("Not authenticated");
-
-  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(location)}:append?valueInputOption=USER_ENTERED`, {
+  const res = await authorizedFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(location)}:append?valueInputOption=USER_ENTERED`, {
     method: 'POST',
-    headers: { 
-      Authorization: `Bearer ${token}`,
+    headers: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
@@ -99,18 +91,14 @@ export async function updateSheetRow(
   headers: string[],
   updatedRowData: Record<string, string>
 ) {
-  const token = await getAccessToken();
-  if (!token) throw new Error("Not authenticated");
-
   // Reconstruct row array based on headers
   const newRow: string[] = headers.map(header => updatedRowData[header] || "");
 
   const range = `${location}!A${rowIndex}`; // Overwriting the whole row
 
-  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, {
+  const res = await authorizedFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`, {
     method: 'PUT',
-    headers: { 
-      Authorization: `Bearer ${token}`,
+    headers: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({

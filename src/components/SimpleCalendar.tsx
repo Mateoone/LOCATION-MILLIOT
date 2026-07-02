@@ -3,36 +3,23 @@ import { SheetData, ReservationRow, SheetLocation, addSheetRow } from '../lib/sh
 import { parse, isValid, format, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { ChevronDown, ChevronRight, Euro, Moon, Link, Plus, Loader2 } from 'lucide-react';
-import { fetchExternalCalendar, IcalEvent } from '../lib/ical';
+import { IcalEvent } from '../lib/ical';
 import { addEventToGoogleCalendar } from '../lib/calendarApi';
 
 interface CalendarProps {
   data: SheetData;
   location: SheetLocation;
+  externalEvents: IcalEvent[];
+  loadingExternal: boolean;
+  onExternalAdded: (evt: IcalEvent) => void;
   onCellClick: (row: ReservationRow) => void;
   onReload: () => void;
 }
 
-export function SimpleCalendar({ data, location, onCellClick, onReload }: CalendarProps) {
+export function SimpleCalendar({ data, location, externalEvents, loadingExternal, onExternalAdded, onCellClick, onReload }: CalendarProps) {
   const [expandedYears, setExpandedYears] = useState<Record<string, boolean>>({});
-  const [externalEvents, setExternalEvents] = useState<IcalEvent[]>([]);
-  const [loadingExternal, setLoadingExternal] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [pushing, setPushing] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-    async function loadIcal() {
-      setLoadingExternal(true);
-      const evts = await fetchExternalCalendar(location);
-      if (isMounted) {
-        setExternalEvents(evts);
-        setLoadingExternal(false);
-      }
-    }
-    loadIcal();
-    return () => { isMounted = false; };
-  }, [location]);
 
   const startHeader = useMemo(() => {
     return data.headers.find(h => /début|debut|arrivée|arrivee|start/i.test(h)) || 
@@ -143,13 +130,9 @@ export function SimpleCalendar({ data, location, onCellClick, onReload }: Calend
       setPushing(true);
       await addEventToGoogleCalendar(location, evt.start, evt.end, evt.title);
       
-      // Since Google Calendar's .ics export is heavily cached (up to 24 hours), 
-      // the newly added event won't immediately appear in fetchExternalCalendar.
-      // We manually add it to our local state so the UI updates immediately.
-      setExternalEvents(prev => [
-        ...prev,
-        { start: evt.start, end: evt.end, summary: evt.title }
-      ]);
+      // On répercute immédiatement l'ajout dans l'état parent pour que
+      // l'UI se mette à jour sans re-télécharger le calendrier.
+      onExternalAdded({ start: evt.start, end: evt.end, summary: evt.title });
       
       alert(`Les dates ${format(evt.start, 'dd/MM/yyyy')} ➔ ${format(evt.end, 'dd/MM/yyyy')} ont été bloquées sur Airbnb avec succès (via Google Agenda).`);
     } catch (e: any) {

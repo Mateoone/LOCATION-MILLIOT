@@ -280,7 +280,15 @@ export function LocationView({ location }: { location: SheetLocation }) {
       ) : view === 'calendar' ? (
         <AnnualCalendar data={data} location={location} externalEvents={externalEvents} onCellClick={(row) => setEditingRow(row)} />
       ) : view === 'recap' ? (
-        <SimpleCalendar data={data} location={location} onCellClick={(row) => setEditingRow(row)} onReload={loadData} />
+        <SimpleCalendar
+          data={data}
+          location={location}
+          externalEvents={externalEvents}
+          loadingExternal={loadingExternal}
+          onExternalAdded={(evt) => setExternalEvents(prev => [...prev, evt])}
+          onCellClick={(row) => setEditingRow(row)}
+          onReload={loadData}
+        />
       ) : (
         <LocationStats data={data} />
       )}

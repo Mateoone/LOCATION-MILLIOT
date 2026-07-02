@@ -4,7 +4,7 @@ import { getFirestore } from "firebase/firestore";
 import firebaseConfig from "../../firebase-applet-config.json";
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = getFirestore(app);
 export const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();
@@ -69,15 +69,55 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 };
 
 export const getAccessToken = async (): Promise<string | null> => {
-  if (cachedAccessToken) return cachedAccessToken;
-  
-  const storedToken = localStorage.getItem(TOKEN_KEY);
   const storedExpiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
-  if (storedToken && storedExpiry && Number(storedExpiry) > Date.now()) {
+  if (!storedExpiry || Number(storedExpiry) <= Date.now()) {
+    clearStoredToken();
+    return null;
+  }
+
+  if (cachedAccessToken) return cachedAccessToken;
+
+  const storedToken = localStorage.getItem(TOKEN_KEY);
+  if (storedToken) {
     cachedAccessToken = storedToken;
     return storedToken;
   }
   return null;
+};
+
+export const AUTH_EXPIRED_EVENT = "auth-expired";
+
+const clearStoredToken = () => {
+  cachedAccessToken = null;
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(TOKEN_EXPIRY_KEY);
+};
+
+// Prévient l'app que la session Google n'est plus valable : App.tsx écoute
+// cet événement et raffiche l'écran de connexion (le popup Google ne peut
+// être rouvert que sur un clic utilisateur).
+const notifyAuthExpired = () => {
+  clearStoredToken();
+  window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+};
+
+export const authorizedFetch = async (url: string, init: RequestInit = {}): Promise<Response> => {
+  const token = await getAccessToken();
+  if (!token) {
+    notifyAuthExpired();
+    throw new Error("Session Google expirée. Veuillez vous reconnecter.");
+  }
+
+  const res = await fetch(url, {
+    ...init,
+    headers: { ...(init.headers || {}), Authorization: `Bearer ${token}` },
+  });
+
+  if (res.status === 401) {
+    notifyAuthExpired();
+    throw new Error("Session Google expirée. Veuillez vous reconnecter.");
+  }
+  return res;
 };
 
 export const logout = async () => {

@@ -4,7 +4,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { initAuth, logout } from './lib/auth';
+import { initAuth, logout, AUTH_EXPIRED_EVENT } from './lib/auth';
 import { LoginScreen } from './components/LoginScreen';
 import { LocationView } from './components/LocationView';
 import { ContactsView } from './components/ContactsView';
@@ -29,6 +29,15 @@ export default function App() {
       }
     );
     return () => unsubscribe();
+  }, []);
+
+  // Le token OAuth Google expire au bout d'une heure : dès qu'un appel API
+  // échoue en 401, on raffiche l'écran de connexion au lieu de laisser
+  // toutes les requêtes échouer silencieusement.
+  useEffect(() => {
+    const onExpired = () => setIsAuthenticated(false);
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
   }, []);
 
   if (loading) {

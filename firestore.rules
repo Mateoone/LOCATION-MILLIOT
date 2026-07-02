@@ -6,8 +6,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    function isSignedIn() {
-      return request.auth != null;
+    // Seuls les comptes Google de la famille ont accès aux données.
+    // IMPORTANT : ajoutez ici les adresses exactes utilisées pour vous
+    // connecter à l'application (bouton "Se connecter avec Google").
+    function isFamily() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in [
+          'matthieu.milliot@wearemip.com'
+          // , 'adresse.helene@gmail.com'
+        ];
     }
 
     function isValidVoyageur(data) {
@@ -15,9 +23,9 @@ service cloud.firestore {
     }
 
     match /voyageurs/{id} {
-      allow read, list: if isSignedIn();
-      allow write, create, update: if isSignedIn() && isValidVoyageur(request.resource.data);
-      allow delete: if isSignedIn();
+      allow read, list: if isFamily();
+      allow create, update: if isFamily() && isValidVoyageur(request.resource.data);
+      allow delete: if isFamily();
     }
   }
 }

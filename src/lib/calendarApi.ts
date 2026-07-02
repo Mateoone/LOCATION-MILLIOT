@@ -1,4 +1,4 @@
-import { getAccessToken } from "./auth";
+import { authorizedFetch } from "./auth";
 import { format } from "date-fns";
 
 export const CALENDAR_IDS: Record<string, string> = {
@@ -13,9 +13,6 @@ export async function addEventToGoogleCalendar(
   end: Date,
   summary: string
 ) {
-  const token = await getAccessToken();
-  if (!token) throw new Error("Not authenticated");
-  
   const calendarId = CALENDAR_IDS[locationName];
   if (!calendarId) throw new Error("Calendar ID not found for location: " + locationName);
 
@@ -35,10 +32,9 @@ export async function addEventToGoogleCalendar(
     transparency: "opaque" // blocks the time
   };
 
-  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
+  const res = await authorizedFetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(eventPayload)
