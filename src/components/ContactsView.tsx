@@ -27,7 +27,8 @@ import {
   ShieldAlert,
   Sparkles,
   ArrowRight,
-  Trash2
+  Trash2,
+  Download
 } from 'lucide-react';
 
 interface BookingLink {
@@ -52,6 +53,7 @@ export function ContactsView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showUpcomingOnly, setShowUpcomingOnly] = useState(false);
   const [groupResourceId, setGroupResourceId] = useState<string>('');
   
   // New Contact Form State (Single addition manual fallback)
@@ -108,6 +110,29 @@ export function ContactsView() {
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  const handleExportCSV = () => {
+    if (filteredContacts.length === 0) return;
+
+    const rows = filteredContacts.map(c => {
+      const name = `"${(c.name || '').replace(/"/g, '""')}"`;
+      const email = `"${(c.email || '').replace(/"/g, '""')}"`;
+      const phone = `"${(c.phone || '').replace(/"/g, '""')}"`;
+      const biography = `"${(c.biography || '').replace(/"/g, '""')}"`;
+      
+      return [name, email, phone, biography].join(',');
+    });
+
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + ['Nom,Email,Téléphone,Notes/Canal'].concat(rows).join('\n');
+    const encodedUri = encodeURI(csvContent);
+    
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `contacts_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const loadContacts = async () => {
@@ -173,19 +198,6 @@ export function ContactsView() {
     loadAllBookings();
   }, []);
 
-  // Filter contacts by search query
-  const filteredContacts = useMemo(() => {
-    if (!searchQuery.trim()) return contacts;
-    const query = searchQuery.toLowerCase();
-    return contacts.filter(
-      c =>
-        c.name.toLowerCase().includes(query) ||
-        c.email.toLowerCase().includes(query) ||
-        c.phone.toLowerCase().includes(query) ||
-        c.biography?.toLowerCase().includes(query)
-    );
-  }, [contacts, searchQuery]);
-
   // Find bookings associated with the selected contact
   const activeBookingsForContact = (contactName: string) => {
     if (!contactName) return [];
@@ -197,6 +209,39 @@ export function ContactsView() {
       return rowName.includes(nameLower) || nameLower.includes(rowName);
     });
   };
+
+  // Filter contacts by search query and upcoming status
+  const filteredContacts = useMemo(() => {
+    let result = contacts;
+    
+    if (showUpcomingOnly) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      result = result.filter(c => {
+        const bookings = activeBookingsForContact(c.name);
+        return bookings.some(b => {
+           const endHeader = Object.keys(b.row).find(h => /fin|départ|depart|end/i.test(h));
+           if (!endHeader || !b.row[endHeader]) return false;
+           const endDate = parseDateStr(b.row[endHeader]);
+           return endDate && endDate >= today;
+        });
+      });
+    }
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(
+        c =>
+          c.name.toLowerCase().includes(query) ||
+          c.email.toLowerCase().includes(query) ||
+          c.phone.toLowerCase().includes(query) ||
+          c.biography?.toLowerCase().includes(query)
+      );
+    }
+    
+    return result;
+  }, [contacts, searchQuery, showUpcomingOnly, allBookings]);
 
   const selectedContactBookings = useMemo(() => {
     if (!selectedContact) return [];
@@ -254,7 +299,7 @@ export function ContactsView() {
           const endHeader = sheetResult.headers.find(h => /fin|départ|depart|end/i.test(h)) || sheetResult.headers[1];
           const nameHeader = sheetResult.headers.find(h => /nom|locataire|client|name/i.test(h)) || sheetResult.headers[0];
           const phoneHeader = sheetResult.headers.find(h => /tél|tel|phone/i.test(h));
-          const emailHeader = sheetResult.headers.find(h => /email|mail/i.test(h));
+          const emailHeader = sheetResult.headers.find(h => /email|mail|e-mail|courriel/i.test(h));
           const sourceHeader = sheetResult.headers.find(h => /source|plateforme|origine|provenance|clientele|clientèle/i.test(h));
 
           sheetResult.rows.forEach(row => {
@@ -354,10 +399,11 @@ export function ContactsView() {
 
         try {
           if (existingContact) {
-            // Check if biography note or phone number needs updates
+            // Check if biography note, phone number or email needs updates
             const needsUpdate = 
               existingContact.biography !== biographyNote || 
-              (!existingContact.phone && guestData.phone);
+              (!existingContact.phone && guestData.phone) ||
+              (!existingContact.email && guestData.email);
 
             if (needsUpdate) {
               await updateGoogleContact("", existingContact.resourceName, existingContact.etag || '', {
@@ -498,7 +544,7 @@ export function ContactsView() {
             <span className="text-[10px] font-bold text-slate-400 tracking-wider">Provenance dernière loc :</span>
             <div>
               {extractChannelFromBio(contact.biography).channel === 'Airbnb' ? (
-                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/25 uppercase inline-block mb-1">
+                <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/25 uppercase inline-block mb-1">
                   Airbnb Host Connection
                 </span>
               ) : (
@@ -598,7 +644,7 @@ export function ContactsView() {
           <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
             Annuaire Voyageurs
             <span className="text-[10px] bg-purple-500/15 text-purple-400 border border-purple-500/30 px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider">
-              Partagé Hélène & Matthieu (Base Firestore)
+              Firestore
             </span>
           </h1>
           <p className="text-slate-500 text-xs mt-1">
@@ -632,16 +678,42 @@ export function ContactsView() {
         {/* Contacts list */}
         <div className="flex-1 flex flex-col min-h-0 p-4 lg:p-8">
           <div className="relative mb-6 shrink-0 max-w-4xl mx-auto w-full">
-            <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-500">
-              <Search className="w-4 h-4" />
-            </span>
-            <input
-              type="text"
-              placeholder="Rechercher par nom, téléphone ou canal (ex: Airbnb, Direct)..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:ring-1 focus:ring-purple-500 focus:border-purple-500 text-sm text-slate-200 outline-none transition-all placeholder:text-slate-600 shadow-sm"
-            />
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-500">
+                  <Search className="w-4 h-4" />
+                </span>
+                <input
+                  type="text"
+                  placeholder="Rechercher par nom, téléphone ou canal (ex: Airbnb, Direct)..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:ring-1 focus:ring-purple-500 focus:border-purple-500 text-sm text-slate-200 outline-none transition-all placeholder:text-slate-600 shadow-sm"
+                />
+              </div>
+              <label className="flex items-center space-x-2 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl cursor-pointer hover:bg-slate-900 transition-colors">
+                <input 
+                  type="checkbox" 
+                  checked={showUpcomingOnly} 
+                  onChange={e => setShowUpcomingOnly(e.target.checked)}
+                  className="rounded text-purple-500 bg-slate-800 border-slate-700 focus:ring-purple-500/50 outline-none"
+                  style={{ width: "16px", height: "16px" }}
+                />
+                <span className="text-sm font-medium text-slate-300 whitespace-nowrap">
+                  Séjours en cours / à venir
+                </span>
+              </label>
+              
+              <button
+                onClick={handleExportCSV}
+                disabled={filteredContacts.length === 0}
+                className="flex items-center space-x-2 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl hover:bg-slate-900 transition-colors cursor-pointer text-sm font-medium text-slate-300 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Exporter les contacts filtrés en CSV"
+              >
+                <Download className="w-4 h-4 text-slate-400" />
+                <span>Exporter CSV</span>
+              </button>
+            </div>
           </div>
 
           {loading ? (
@@ -726,8 +798,9 @@ export function ContactsView() {
                           <div className="flex items-center gap-2">
                             <h4 className="font-semibold text-sm text-slate-200 truncate">{contact.name}</h4>
                             {matches.length > 0 && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase tracking-wide shrink-0">
-                                {matches.length} {matches.length > 1 ? 'séjours' : 'séjour'}
+                              <span className="text-[9px] font-bold pr-2 pl-1 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase tracking-wide shrink-0 inline-flex items-center">
+                                <span className="w-3.5 h-3.5 rounded-full bg-amber-500/20 flex items-center justify-center mr-1.5 text-[8px] border border-amber-500/30">{matches.length}</span>
+                                {matches.length > 1 ? 'séjours' : 'séjour'}
                               </span>
                             )}
                           </div>
@@ -750,7 +823,7 @@ export function ContactsView() {
 
                       <div className="flex items-center space-x-2 shrink-0">
                         {info.channel === 'Airbnb' ? (
-                          <span className="text-[10px] font-bold bg-orange-500/10 text-orange-400 border border-orange-500/20 px-2 py-0.5 rounded uppercase hidden sm:inline-block">
+                          <span className="text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded uppercase hidden sm:inline-block">
                             Airbnb
                           </span>
                         ) : info.channel === 'Direct' ? (

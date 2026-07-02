@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ReservationRow, SheetLocation, updateSheetRow } from '../lib/sheets';
-import { X, Loader2, Mail, Phone } from 'lucide-react';
+import { X, Loader2, Mail, Phone, FileText } from 'lucide-react';
 import { fetchGoogleContacts, GoogleContact } from '../lib/contacts';
 import { getAccessToken } from '../lib/auth';
 
@@ -10,9 +10,10 @@ interface EditRowModalProps {
   location: SheetLocation;
   onClose: () => void;
   onSaved: () => void;
+  onGenerateContract?: () => void;
 }
 
-export function EditRowModal({ row, headers, location, onClose, onSaved }: EditRowModalProps) {
+export function EditRowModal({ row, headers, location, onClose, onSaved, onGenerateContract }: EditRowModalProps) {
   const [formData, setFormData] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     headers.forEach(h => initial[h] = row[h] || '');
@@ -172,13 +173,52 @@ export function EditRowModal({ row, headers, location, onClose, onSaved }: EditR
                       )}
                     </div>
                   ) : (
-                    <input
-                      type="text"
-                      value={formData[header]}
-                      onChange={e => setFormData(prev => ({ ...prev, [header]: e.target.value }))}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-sm text-slate-200 outline-none transition-shadow"
-                      placeholder={`Saisir ${header}`}
-                    />
+                    (() => {
+                      const lowerHeader = header.toLowerCase();
+                      const isDateField = lowerHeader.includes('date') || lowerHeader.includes('check') || lowerHeader.includes('arrivée') || lowerHeader.includes('départ');
+                      
+                      if (isDateField) {
+                        const val = formData[header] || '';
+                        let isoDate = '';
+                        if (val) {
+                          const parts = val.split('/');
+                          if (parts.length === 3) {
+                            isoDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                          } else {
+                            isoDate = val; // fallback
+                          }
+                        }
+
+                        return (
+                          <input
+                            type="date"
+                            value={isoDate}
+                            onChange={e => {
+                              const newValue = e.target.value;
+                              let sheetDate = newValue;
+                              if (newValue && newValue.includes('-')) {
+                                const parts = newValue.split('-');
+                                if (parts.length === 3) {
+                                  sheetDate = `${parts[2]}/${parts[1]}/${parts[0]}`;
+                                }
+                              }
+                              setFormData(prev => ({ ...prev, [header]: sheetDate }));
+                            }}
+                            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-sm text-slate-200 outline-none transition-shadow [color-scheme:dark]"
+                          />
+                        );
+                      }
+
+                      return (
+                        <input
+                          type={lowerHeader.includes('mail') || lowerHeader.includes('e-mail') ? 'email' : lowerHeader.includes('tél') || lowerHeader.includes('tel') || lowerHeader.includes('phone') ? 'tel' : 'text'}
+                          value={formData[header]}
+                          onChange={e => setFormData(prev => ({ ...prev, [header]: e.target.value }))}
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 text-sm text-slate-200 outline-none transition-shadow"
+                          placeholder={`Saisir ${header}`}
+                        />
+                      );
+                    })()
                   )}
                 </div>
               );
@@ -186,29 +226,43 @@ export function EditRowModal({ row, headers, location, onClose, onSaved }: EditR
           </div>
         </form>
 
-        <div className="px-6 py-4 border-t border-slate-800/80 bg-slate-950/50 flex justify-end space-x-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-5 py-2 text-sm font-medium text-slate-300 bg-slate-800 border border-slate-700 rounded-lg hover:bg-slate-700 transition-colors"
-            disabled={saving}
-          >
-            Annuler
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={saving}
-            className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 border border-transparent rounded-lg hover:bg-indigo-500 focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-950 focus:ring-indigo-500 transition-colors flex items-center"
-          >
-            {saving ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Enregistrement...
-              </>
-            ) : (
-              'Enregistrer'
+        <div className="px-6 py-4 border-t border-slate-800/80 bg-slate-950/50 flex justify-between items-center">
+          <div>
+            {onGenerateContract && ['PORTIVY', 'BAS', 'HAUT'].includes(location) && (
+              <button
+                type="button"
+                onClick={onGenerateContract}
+                className="px-4 py-2 text-sm font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg hover:bg-amber-500/20 transition-colors flex items-center"
+              >
+                <FileText className="w-4 h-4 mr-2" />
+                Dresser un contrat
+              </button>
             )}
-          </button>
+          </div>
+          <div className="flex space-x-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-5 py-2 text-sm font-medium text-slate-300 bg-slate-800 border border-slate-700 rounded-lg hover:bg-slate-700 transition-colors"
+              disabled={saving}
+            >
+              Annuler
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={saving}
+              className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 border border-transparent rounded-lg hover:bg-indigo-500 focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-950 focus:ring-indigo-500 transition-colors flex items-center"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Enregistrement...
+                </>
+              ) : (
+                'Enregistrer'
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -4,7 +4,8 @@ import { getFirestore } from "firebase/firestore";
 import firebaseConfig from "../../firebase-applet-config.json";
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+// L'app AI Studio utilise une base Firestore nommée, pas la base "(default)".
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
 const provider = new GoogleAuthProvider();

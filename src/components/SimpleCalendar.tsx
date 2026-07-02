@@ -377,7 +377,7 @@ export function SimpleCalendar({ data, location, externalEvents, loadingExternal
                         </div>
                         <div className="flex flex-col hidden sm:flex">
                           <span className="text-slate-500 uppercase text-[9px] tracking-wider font-bold">Airbnb</span>
-                          <span className="font-mono">{airbnbNuits} nuits</span>
+                          <span className="font-mono text-rose-400">{airbnbNuits} nuits</span>
                         </div>
                         <div className="flex flex-col">
                           <span className="text-slate-500 uppercase text-[9px] tracking-wider font-bold">Jours Loués</span>
