@@ -11,6 +11,8 @@ import { ContactsView } from './components/ContactsView';
 import { SheetLocation } from './lib/sheets';
 import { LogOut, Home, Sunset, FileSpreadsheet, Users } from 'lucide-react';
 
+const APP_VERSION = '1.1';
+
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -64,7 +66,10 @@ export default function App() {
       <div className="w-full md:w-64 bg-slate-950 border-r border-slate-800 flex flex-col shrink-0">
         <div className="p-6 border-b border-slate-800 flex items-center justify-between">
           <div className="flex flex-col">
-            <span className="text-xl font-bold tracking-tight text-white">Location Milliot</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-xl font-bold tracking-tight text-white">Location Milliot</span>
+              <span className="text-[10px] font-mono text-slate-500">v:{APP_VERSION}</span>
+            </div>
             <span className="text-xs text-slate-500 font-bold tracking-wide uppercase">Maisons</span>
           </div>
         </div>
