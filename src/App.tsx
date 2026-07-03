@@ -11,7 +11,7 @@ import { ContactsView } from './components/ContactsView';
 import { SheetLocation } from './lib/sheets';
 import { LogOut, Home, Sunset, FileSpreadsheet, Users } from 'lucide-react';
 
-const APP_VERSION = '1.2';
+const APP_VERSION = '1.3';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);

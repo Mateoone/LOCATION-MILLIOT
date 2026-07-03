@@ -14,7 +14,7 @@ export interface IcalEvent {
 const READ_CALENDAR_IDS: Record<string, string[]> = {
   BAS: [CALENDAR_IDS.BAS, "0cs87obk61n9r61dv7cif9n9163vi6ab@import.calendar.google.com"],
   HAUT: [CALENDAR_IDS.HAUT, "cvv6kpeb5pmlqni3jmrljmavsdn5deso@import.calendar.google.com"],
-  PORTIVY: [CALENDAR_IDS.PORTIVY],
+  PORTIVY: [CALENDAR_IDS.PORTIVY, "2nlubhr2o5ps3n3ok5inntfnmo7gf5b7@import.calendar.google.com"],
 };
 
 // Les vues historiques s'appuient sur le Google Sheet ; les calendriers ne
