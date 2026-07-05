@@ -7,14 +7,35 @@ export interface IcalEvent {
   summary: string;
 }
 
+export interface CalendarSourceStatus {
+  label: string;        // "Google" ou "Airbnb"
+  ok: boolean;
+  count: number;
+  updated: Date | null; // dernière modification connue (max des events)
+}
+
+interface CalendarRef {
+  id: string;
+  label: string;
+}
+
 // Agendas lus pour chaque maison : l'agenda Google historique (celui dans
 // lequel « Bloquer sur Airbnb » écrit) + l'agenda importé depuis Airbnb
 // (Google Agenda → « Ajouter un agenda → À partir de l'URL » avec l'export
 // iCal de l'annonce Airbnb). Les doublons entre sources sont filtrés.
-const READ_CALENDAR_IDS: Record<string, string[]> = {
-  BAS: [CALENDAR_IDS.BAS, "0cs87obk61n9r61dv7cif9n9163vi6ab@import.calendar.google.com"],
-  HAUT: [CALENDAR_IDS.HAUT, "cvv6kpeb5pmlqni3jmrljmavsdn5deso@import.calendar.google.com"],
-  PORTIVY: [CALENDAR_IDS.PORTIVY, "2nlubhr2o5ps3n3ok5inntfnmo7gf5b7@import.calendar.google.com"],
+const READ_CALENDARS: Record<string, CalendarRef[]> = {
+  BAS: [
+    { id: CALENDAR_IDS.BAS, label: "Google" },
+    { id: "0cs87obk61n9r61dv7cif9n9163vi6ab@import.calendar.google.com", label: "Airbnb" },
+  ],
+  HAUT: [
+    { id: CALENDAR_IDS.HAUT, label: "Google" },
+    { id: "cvv6kpeb5pmlqni3jmrljmavsdn5deso@import.calendar.google.com", label: "Airbnb" },
+  ],
+  PORTIVY: [
+    { id: CALENDAR_IDS.PORTIVY, label: "Google" },
+    { id: "2nlubhr2o5ps3n3ok5inntfnmo7gf5b7@import.calendar.google.com", label: "Airbnb" },
+  ],
 };
 
 // Les vues historiques s'appuient sur le Google Sheet ; les calendriers ne
@@ -36,9 +57,10 @@ function parseEventDate(d: { date?: string; dateTime?: string }): Date | null {
   return null;
 }
 
-async function fetchCalendarEvents(calendarId: string): Promise<IcalEvent[]> {
+async function fetchCalendarEvents(calendarId: string): Promise<{ events: IcalEvent[]; updated: Date | null }> {
   const timeMin = new Date(new Date().getFullYear() - HISTORY_YEARS, 0, 1).toISOString();
   const events: IcalEvent[] = [];
+  let updated: Date | null = null;
   let pageToken: string | undefined;
 
   do {
@@ -68,40 +90,57 @@ async function fetchCalendarEvents(calendarId: string): Promise<IcalEvent[]> {
       if (start && end) {
         events.push({ start, end, summary: item.summary || "" });
       }
+      if (item.updated) {
+        const u = new Date(item.updated);
+        if (!isNaN(u.getTime()) && (!updated || u > updated)) updated = u;
+      }
     }
     pageToken = data.nextPageToken;
   } while (pageToken);
 
-  return events;
+  return { events, updated };
 }
 
 const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 
-export async function fetchExternalCalendar(locationName: string): Promise<IcalEvent[]> {
-  const calendarIds = READ_CALENDAR_IDS[locationName];
-  if (!calendarIds || calendarIds.length === 0) return [];
+export async function fetchCalendarsWithStatus(
+  locationName: string
+): Promise<{ events: IcalEvent[]; sources: CalendarSourceStatus[] }> {
+  const calendars = READ_CALENDARS[locationName];
+  if (!calendars || calendars.length === 0) return { events: [], sources: [] };
 
   // Chaque agenda est lu indépendamment : si l'un échoue (ex. agenda Airbnb
   // non partagé avec le compte connecté), les autres restent affichés.
-  const results = await Promise.allSettled(calendarIds.map(fetchCalendarEvents));
+  const results = await Promise.allSettled(calendars.map(c => fetchCalendarEvents(c.id)));
 
   const merged: IcalEvent[] = [];
   const seen = new Set<string>();
-  for (const result of results) {
+  const sources: CalendarSourceStatus[] = [];
+
+  results.forEach((result, i) => {
+    const ref = calendars[i];
     if (result.status === "rejected") {
       console.warn("Agenda ignoré:", result.reason?.message || result.reason);
-      continue;
+      sources.push({ label: ref.label, ok: false, count: 0, updated: null });
+      return;
     }
-    for (const evt of result.value) {
+    sources.push({ label: ref.label, ok: true, count: result.value.events.length, updated: result.value.updated });
+    for (const evt of result.value.events) {
       const key = `${dayKey(evt.start)}|${dayKey(evt.end)}`;
       if (seen.has(key)) continue;
       seen.add(key);
       merged.push(evt);
     }
-  }
+  });
 
   if (merged.length === 0 && results.every(r => r.status === "rejected")) {
     throw new Error("Impossible de récupérer les agendas de " + locationName);
   }
-  return merged;
+  return { events: merged, sources };
+}
+
+// Conservé pour les appelants qui n'ont besoin que des événements.
+export async function fetchExternalCalendar(locationName: string): Promise<IcalEvent[]> {
+  const { events } = await fetchCalendarsWithStatus(locationName);
+  return events;
 }

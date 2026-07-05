@@ -1,4 +1,5 @@
 import { authorizedFetch } from "./auth";
+import { readCache, writeCache, notifyOffline, isNetworkError } from "./offlineCache";
 
 const SPREADSHEET_ID = "1VVVMkx9Woqxvfs8u7IWWfWwxz_kJ7h4OD9s5oC4u2ts";
 
@@ -16,53 +17,70 @@ export interface SheetData {
 }
 
 export async function fetchSheetData(location: SheetLocation): Promise<SheetData> {
-  const res = await authorizedFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(location)}`, {
-    headers: {
-      'Cache-Control': 'no-cache',
-      'Pragma': 'no-cache'
-    },
-    cache: 'no-store'
-  });
-
-  if (!res.ok) {
-    throw new Error("Failed to fetch sheet data");
-  }
-
-  const result = await res.json();
-  const values = result.values;
-  
-  if (!values || values.length === 0) {
-    return { headers: [], rows: [] };
-  }
-
-  const rawHeaders = values[0] as string[];
-  const headers: string[] = [];
-  const headerCount = new Map<string, number>();
-
-  for (const h of rawHeaders) {
-    const headerStr = h ? h.trim() : "Colonne sans nom";
-    if (headerCount.has(headerStr)) {
-      const count = headerCount.get(headerStr)! + 1;
-      headerCount.set(headerStr, count);
-      headers.push(`${headerStr} (${count})`);
-    } else {
-      headerCount.set(headerStr, 1);
-      headers.push(headerStr);
-    }
-  }
-
-  const rows: ReservationRow[] = [];
-
-  for (let i = 1; i < values.length; i++) {
-    const rowValues = values[i];
-    const rowObj: ReservationRow = { rowIndex: i + 1, id: `${location}-${i + 1}` };
-    headers.forEach((header, index) => {
-      rowObj[header] = rowValues[index] || "";
+  const cacheKey = `sheet:${location}`;
+  try {
+    const res = await authorizedFetch(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(location)}`, {
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+      },
+      cache: 'no-store'
     });
-    rows.push(rowObj);
-  }
 
-  return { headers, rows };
+    if (!res.ok) {
+      throw new Error("Failed to fetch sheet data");
+    }
+
+    const result = await res.json();
+    const values = result.values;
+
+    if (!values || values.length === 0) {
+      const empty = { headers: [], rows: [] };
+      writeCache(cacheKey, empty);
+      return empty;
+    }
+
+    const rawHeaders = values[0] as string[];
+    const headers: string[] = [];
+    const headerCount = new Map<string, number>();
+
+    for (const h of rawHeaders) {
+      const headerStr = h ? h.trim() : "Colonne sans nom";
+      if (headerCount.has(headerStr)) {
+        const count = headerCount.get(headerStr)! + 1;
+        headerCount.set(headerStr, count);
+        headers.push(`${headerStr} (${count})`);
+      } else {
+        headerCount.set(headerStr, 1);
+        headers.push(headerStr);
+      }
+    }
+
+    const rows: ReservationRow[] = [];
+
+    for (let i = 1; i < values.length; i++) {
+      const rowValues = values[i];
+      const rowObj: ReservationRow = { rowIndex: i + 1, id: `${location}-${i + 1}` };
+      headers.forEach((header, index) => {
+        rowObj[header] = rowValues[index] || "";
+      });
+      rows.push(rowObj);
+    }
+
+    const data = { headers, rows };
+    writeCache(cacheKey, data); // pour un affichage hors-ligne ultérieur
+    return data;
+  } catch (err) {
+    // Réseau absent : on sert la dernière version connue si on l'a.
+    if (isNetworkError(err)) {
+      const cached = readCache<SheetData>(cacheKey);
+      if (cached) {
+        notifyOffline(cached.savedAt);
+        return cached.data;
+      }
+    }
+    throw err;
+  }
 }
 
 export async function addSheetRow(

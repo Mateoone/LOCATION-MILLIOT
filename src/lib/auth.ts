@@ -86,7 +86,14 @@ export const getAccessToken = async (): Promise<string | null> => {
   return null;
 };
 
+// Le token OAuth Google expire au bout d'une heure et ne peut pas être
+// renouvelé sans popup côté navigateur (GIS a supprimé le refresh iframe,
+// et ces scopes n'ont pas de refresh-token exploitable sans backend).
+// À l'expiration on prévient App.tsx, qui affiche une bannière de
+// reconnexion en place (sans démonter l'app), puis AUTH_RESTORED_EVENT est
+// émis après un nouveau login réussi pour que les vues rechargent.
 export const AUTH_EXPIRED_EVENT = "auth-expired";
+export const AUTH_RESTORED_EVENT = "auth-restored";
 
 const clearStoredToken = () => {
   cachedAccessToken = null;
@@ -94,12 +101,27 @@ const clearStoredToken = () => {
   localStorage.removeItem(TOKEN_EXPIRY_KEY);
 };
 
-// Prévient l'app que la session Google n'est plus valable : App.tsx écoute
-// cet événement et raffiche l'écran de connexion (le popup Google ne peut
-// être rouvert que sur un clic utilisateur).
+let sessionExpired = false;
+
 const notifyAuthExpired = () => {
   clearStoredToken();
+  if (sessionExpired) return; // évite les bannières multiples si plusieurs requêtes échouent
+  sessionExpired = true;
   window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+};
+
+// Rouvre le popup Google (déclenché par un clic sur la bannière) pour
+// récupérer un token frais tout en gardant l'app montée.
+export const reconnect = async (): Promise<boolean> => {
+  try {
+    await googleSignIn();
+    sessionExpired = false;
+    window.dispatchEvent(new CustomEvent(AUTH_RESTORED_EVENT));
+    return true;
+  } catch (error) {
+    console.error("Reconnexion échouée:", error);
+    return false;
+  }
 };
 
 export const authorizedFetch = async (url: string, init: RequestInit = {}): Promise<Response> => {

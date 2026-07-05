@@ -4,20 +4,67 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { initAuth, logout, AUTH_EXPIRED_EVENT } from './lib/auth';
+import { initAuth, logout, reconnect, AUTH_EXPIRED_EVENT } from './lib/auth';
 import { LoginScreen } from './components/LoginScreen';
 import { LocationView } from './components/LocationView';
 import { ContactsView } from './components/ContactsView';
+import { OverviewDashboard } from './components/OverviewDashboard';
 import { SheetLocation } from './lib/sheets';
-import { LogOut, Home, Sunset, FileSpreadsheet, Users } from 'lucide-react';
+import { OFFLINE_DATA_EVENT } from './lib/offlineCache';
+import { LogOut, Home, Sunset, FileSpreadsheet, Users, LayoutDashboard, AlertTriangle, Loader2, WifiOff } from 'lucide-react';
 
-const APP_VERSION = '1.3';
+const APP_VERSION = '1.4';
+
+type Tab = 'overview' | 'houses' | 'contacts';
+
+function ReconnectOverlay() {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const handleReconnect = async () => {
+    setBusy(true);
+    setFailed(false);
+    const ok = await reconnect();
+    setBusy(false);
+    if (!ok) setFailed(true);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+      <div className="max-w-sm w-full bg-slate-900 border border-slate-800 rounded-2xl shadow-xl p-6 text-center space-y-4">
+        <div className="w-12 h-12 bg-amber-500/10 text-amber-400 rounded-full flex items-center justify-center mx-auto">
+          <AlertTriangle className="w-6 h-6" />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-white">Session Google expirée</h2>
+          <p className="text-sm text-slate-400 mt-1">
+            La connexion Google se renouvelle après une heure. Reconnectez-vous pour continuer — vous resterez sur la même page.
+          </p>
+        </div>
+        {failed && (
+          <p className="text-xs text-rose-400 bg-rose-950/30 border border-rose-900/50 rounded-lg py-2 px-3">
+            La reconnexion a échoué. Vérifiez que le popup Google n'est pas bloqué, puis réessayez.
+          </p>
+        )}
+        <button
+          onClick={handleReconnect}
+          disabled={busy}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 font-bold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors disabled:opacity-60"
+        >
+          {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Reconnexion…</> : 'Se reconnecter'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeLocation, setActiveLocation] = useState<SheetLocation>('HAUT');
-  const [currentTab, setCurrentTab] = useState<'houses' | 'contacts'>('houses');
+  const [currentTab, setCurrentTab] = useState<Tab>('overview');
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [offlineSince, setOfflineSince] = useState<number | null>(null);
 
   useEffect(() => {
     const unsubscribe = initAuth(
@@ -33,13 +80,24 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Le token OAuth Google expire au bout d'une heure : dès qu'un appel API
-  // échoue en 401, on raffiche l'écran de connexion au lieu de laisser
-  // toutes les requêtes échouer silencieusement.
+  // Token OAuth expiré : on garde l'app montée et on affiche une bannière de
+  // reconnexion en place (le popup Google exige un clic utilisateur).
   useEffect(() => {
-    const onExpired = () => setIsAuthenticated(false);
+    const onExpired = () => setSessionExpired(true);
+    const onRestored = () => setSessionExpired(false);
     window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
-    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    window.addEventListener('auth-restored', onRestored);
+    return () => {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+      window.removeEventListener('auth-restored', onRestored);
+    };
+  }, []);
+
+  // Données servies depuis le cache local (réseau indisponible).
+  useEffect(() => {
+    const onOffline = (e: Event) => setOfflineSince((e as CustomEvent).detail?.savedAt ?? Date.now());
+    window.addEventListener(OFFLINE_DATA_EVENT, onOffline);
+    return () => window.removeEventListener(OFFLINE_DATA_EVENT, onOffline);
   }, []);
 
   if (loading) {
@@ -73,9 +131,21 @@ export default function App() {
             <span className="text-xs text-slate-500 font-bold tracking-wide uppercase">Maisons</span>
           </div>
         </div>
-        
+
         <div className="p-4 flex-1 space-y-1">
-          <span className="px-4 py-1.5 block text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">Propriétés</span>
+          <button
+            onClick={() => setCurrentTab('overview')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors font-medium text-sm cursor-pointer
+              ${currentTab === 'overview'
+                ? 'bg-sky-600/20 text-sky-400'
+                : 'text-slate-500 hover:bg-slate-900/50 hover:text-slate-300'
+              }`}
+          >
+            <LayoutDashboard className={`w-5 h-5 ${currentTab === 'overview' ? 'text-sky-400' : 'text-slate-500'}`} />
+            <span>Vue d'ensemble</span>
+          </button>
+
+          <span className="px-4 pt-4 pb-1.5 block text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">Propriétés</span>
           {locations.map(loc => {
             const Icon = loc.icon;
             const isActive = currentTab === 'houses' && activeLocation === loc.id;
@@ -87,8 +157,8 @@ export default function App() {
                   setActiveLocation(loc.id);
                 }}
                 className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors font-medium text-sm cursor-pointer
-                  ${isActive 
-                    ? 'bg-indigo-600/20 text-indigo-400' 
+                  ${isActive
+                    ? 'bg-indigo-600/20 text-indigo-400'
                     : 'text-slate-500 hover:bg-slate-900/50 hover:text-slate-300'
                   }`}
               >
@@ -104,7 +174,7 @@ export default function App() {
               onClick={() => setCurrentTab('contacts')}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors font-medium text-sm cursor-pointer
                 ${currentTab === 'contacts'
-                  ? 'bg-purple-600/20 text-purple-400' 
+                  ? 'bg-purple-600/20 text-purple-400'
                   : 'text-slate-500 hover:bg-slate-900/50 hover:text-slate-300'
                 }`}
             >
@@ -136,11 +206,26 @@ export default function App() {
       </div>
 
       {/* Main Content Area */}
-      {currentTab === 'houses' ? (
-        <LocationView location={activeLocation} />
-      ) : (
-        <ContactsView />
-      )}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {offlineSince !== null && (
+          <div className="flex items-center gap-2 px-4 py-1.5 bg-amber-500/10 border-b border-amber-500/20 text-amber-300 text-xs shrink-0">
+            <WifiOff className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Mode hors-ligne — données du {new Date(offlineSince).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}.
+            </span>
+            <button onClick={() => setOfflineSince(null)} className="ml-auto text-amber-400/70 hover:text-amber-300">Masquer</button>
+          </div>
+        )}
+        {currentTab === 'overview' ? (
+          <OverviewDashboard onOpenLocation={(loc) => { setActiveLocation(loc); setCurrentTab('houses'); }} />
+        ) : currentTab === 'houses' ? (
+          <LocationView location={activeLocation} />
+        ) : (
+          <ContactsView />
+        )}
+      </div>
+
+      {sessionExpired && <ReconnectOverlay />}
     </div>
   );
 }

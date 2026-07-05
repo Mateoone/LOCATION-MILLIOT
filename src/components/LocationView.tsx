@@ -1,13 +1,35 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { SheetLocation, SheetData, fetchSheetData, ReservationRow } from '../lib/sheets';
-import { Calendar, CreditCard, Edit3, ArrowUpDown, Check, X, Phone, Globe, Briefcase, MapPin, List, RefreshCw, Search, FileText } from 'lucide-react';
+import { Calendar, CreditCard, Edit3, ArrowUpDown, Check, X, Phone, Globe, Briefcase, MapPin, List, RefreshCw, Search, FileText, Loader2 } from 'lucide-react';
 import { EditRowModal } from './EditRowModal';
-import { ContractModal } from './contracts/ContractModal';
 import { SimpleCalendar } from './SimpleCalendar';
-import { LocationStats } from './LocationStats';
 import { AnnualCalendar } from './AnnualCalendar';
-import { BarChart as BarChartIcon } from 'lucide-react';
-import { fetchExternalCalendar, IcalEvent } from '../lib/ical';
+
+// Chargés à la demande : recharts (~graphiques) et react-pdf (~contrats) sont
+// lourds et rarement utilisés — on les sort du bundle initial.
+const LocationStats = lazy(() => import('./LocationStats').then(m => ({ default: m.LocationStats })));
+const ContractModal = lazy(() => import('./contracts/ContractModal').then(m => ({ default: m.ContractModal })));
+
+const LazyFallback = () => (
+  <div className="flex-1 flex items-center justify-center text-slate-500 gap-2 py-12">
+    <Loader2 className="w-4 h-4 animate-spin" /> Chargement…
+  </div>
+);
+import { BarChart as BarChartIcon, AlertTriangle } from 'lucide-react';
+import { fetchCalendarsWithStatus, IcalEvent, CalendarSourceStatus } from '../lib/ical';
+import { buildBookings, findConflicts } from '../lib/bookings';
+import { AUTH_RESTORED_EVENT } from '../lib/auth';
+
+function timeAgo(d: Date | null): string {
+  if (!d) return '—';
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return "à l'instant";
+  if (mins < 60) return `il y a ${mins} min`;
+  const h = Math.round(mins / 60);
+  if (h < 24) return `il y a ${h} h`;
+  const j = Math.round(h / 24);
+  return `il y a ${j} j`;
+}
 
 const TableCell = ({ header, val }: { header: string, val: string }) => {
   const [showPhone, setShowPhone] = useState(false);
@@ -52,20 +74,24 @@ export function LocationView({ location }: { location: SheetLocation }) {
   const [sortAsc, setSortAsc] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [externalEvents, setExternalEvents] = useState<IcalEvent[]>([]);
+  const [sources, setSources] = useState<CalendarSourceStatus[]>([]);
   const [loadingExternal, setLoadingExternal] = useState(false);
 
-  // Fetch Airbnb iCal external events when active location changes
+  // Fetch Airbnb/Google calendar events (and per-source status) when the
+  // active location changes, and again after a session reconnect.
   useEffect(() => {
     let isMounted = true;
     async function loadIcal() {
       try {
         setLoadingExternal(true);
-        const evts = await fetchExternalCalendar(location);
+        const { events, sources } = await fetchCalendarsWithStatus(location);
         if (isMounted) {
-          setExternalEvents(evts);
+          setExternalEvents(events);
+          setSources(sources);
         }
       } catch (err) {
         console.warn("Failed to load external calendar:", err);
+        if (isMounted) setSources([]);
       } finally {
         if (isMounted) {
           setLoadingExternal(false);
@@ -73,7 +99,11 @@ export function LocationView({ location }: { location: SheetLocation }) {
       }
     }
     loadIcal();
-    return () => { isMounted = false; };
+    window.addEventListener(AUTH_RESTORED_EVENT, loadIcal);
+    return () => {
+      isMounted = false;
+      window.removeEventListener(AUTH_RESTORED_EVENT, loadIcal);
+    };
   }, [location]);
 
   const loadData = async () => {
@@ -110,7 +140,17 @@ export function LocationView({ location }: { location: SheetLocation }) {
     // Set initial sort state (which gets confirmed when data loads)
     setSortCol(null);
     setSortAsc(false);
+    window.addEventListener(AUTH_RESTORED_EVENT, loadData);
+    return () => window.removeEventListener(AUTH_RESTORED_EVENT, loadData);
   }, [location]);
+
+  // Chevauchements à venir (Sheet ↔ Sheet ou Sheet ↔ Airbnb) pour cette maison.
+  const conflicts = useMemo(() => {
+    if (!data || data.headers.length === 0) return [];
+    const bookings = buildBookings(data, location, externalEvents);
+    const now = Date.now();
+    return findConflicts(bookings).filter(c => c.a.end.getTime() >= now || c.b.end.getTime() >= now);
+  }, [data, location, externalEvents]);
 
   const sortedRows = useMemo(() => {
     if (!data) return [];
@@ -206,12 +246,30 @@ export function LocationView({ location }: { location: SheetLocation }) {
     <div className="flex-1 flex flex-col font-sans overflow-hidden bg-slate-900 text-slate-100">
       <header className="h-20 border-b border-slate-800 flex items-center justify-between px-6 lg:px-8 bg-slate-900/50 shrink-0">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-xl font-bold tracking-tight text-white">Maison: {location}</h1>
-            <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-400 text-xs px-2.5 py-1 rounded-full border border-emerald-500/20 font-medium whitespace-nowrap">
-              <RefreshCw className={`w-3.5 h-3.5 ${loadingExternal ? 'animate-spin' : ''}`} />
-              <span>Synchro active</span>
-            </div>
+            {loadingExternal ? (
+              <div className="flex items-center gap-1.5 bg-slate-800/60 text-slate-400 text-xs px-2.5 py-1 rounded-full border border-slate-700 font-medium whitespace-nowrap">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <span>Vérification…</span>
+              </div>
+            ) : (
+              sources.map(s => (
+                <div
+                  key={s.label}
+                  title={s.ok ? `${s.count} événement(s) · maj ${timeAgo(s.updated)}` : 'Agenda inaccessible avec ce compte'}
+                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium whitespace-nowrap ${
+                    s.ok
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                      : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${s.ok ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                  <span>{s.label}</span>
+                  {s.ok && <span className="text-emerald-500/70 font-normal">· {timeAgo(s.updated)}</span>}
+                </div>
+              ))
+            )}
           </div>
           <p className="text-slate-500 text-xs mt-1">{data.rows.length} enregistrements trouvés.</p>
         </div>
@@ -248,6 +306,24 @@ export function LocationView({ location }: { location: SheetLocation }) {
       </header>
 
       <div className="flex-1 overflow-hidden flex flex-col p-6 lg:p-8 shrink min-h-0 bg-slate-900">
+      {conflicts.length > 0 && (
+        <div className="mb-4 shrink-0 bg-rose-950/30 border border-rose-800/60 rounded-xl p-3">
+          <div className="flex items-center gap-2 text-rose-400 text-xs font-bold uppercase tracking-widest mb-2">
+            <AlertTriangle className="w-4 h-4" />
+            Chevauchement{conflicts.length > 1 ? 's' : ''} détecté{conflicts.length > 1 ? 's' : ''} ({conflicts.length})
+          </div>
+          <div className="space-y-1">
+            {conflicts.slice(0, 4).map((c, i) => (
+              <p key={i} className="text-xs text-rose-300/90 font-mono">
+                « {c.a.title} » ({c.a.start.toLocaleDateString('fr-FR')}→{c.a.end.toLocaleDateString('fr-FR')})
+                {'  ×  '}
+                « {c.b.title} » ({c.b.start.toLocaleDateString('fr-FR')}→{c.b.end.toLocaleDateString('fr-FR')})
+              </p>
+            ))}
+            {conflicts.length > 4 && <p className="text-[11px] text-rose-400/70">+ {conflicts.length - 4} autre(s)…</p>}
+          </div>
+        </div>
+      )}
       {view === 'table' ? (
         <div className="flex-1 flex flex-col min-h-0 gap-4">
           <div className="relative shrink-0 max-w-sm">
@@ -328,16 +404,22 @@ export function LocationView({ location }: { location: SheetLocation }) {
           onReload={loadData}
         />
       ) : (
-        <LocationStats data={data} />
+        <Suspense fallback={<LazyFallback />}>
+          <LocationStats data={data} />
+        </Suspense>
       )}
       </div>
 
-      <ContractModal 
-        isOpen={!!contractRow} 
-        onClose={() => setContractRow(null)} 
-        reservation={contractRow} 
-        location={location} 
-      />
+      {contractRow && (
+        <Suspense fallback={null}>
+          <ContractModal
+            isOpen={!!contractRow}
+            onClose={() => setContractRow(null)}
+            reservation={contractRow}
+            location={location}
+          />
+        </Suspense>
+      )}
 
       {editingRow && (
         <EditRowModal 
