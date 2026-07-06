@@ -79,6 +79,10 @@ export function buildBookings(
 
   const seen = new Set(list.map(b => `${dayKey(b.start)}|${dayKey(b.end)}`));
   externalEvents.forEach((ext, idx) => {
+    // Les règles de disponibilité Airbnb (« Not available ») ne sont pas des
+    // réservations : les inclure créerait des faux conflits et de fausses
+    // arrivées (délai mini de résa, calendrier fermé au-delà d'un an…).
+    if (ext.kind === 'unavailable') return;
     const key = `${dayKey(ext.start)}|${dayKey(ext.end)}`;
     if (seen.has(key)) return;
     seen.add(key);

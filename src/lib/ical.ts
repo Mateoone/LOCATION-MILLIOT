@@ -5,7 +5,14 @@ export interface IcalEvent {
   start: Date;
   end: Date;
   summary: string;
+  // 'unavailable' = règle de disponibilité Airbnb (délai mini avant réservation,
+  // calendrier non ouvert au-delà d'un an, fermeture manuelle) — PAS une
+  // réservation : à exclure des conflits, synchros et calendriers.
+  kind?: 'reservation' | 'unavailable';
 }
+
+export const isUnavailabilityBlock = (summary: string) =>
+  /not available|indisponible|blocked|unavailable/i.test(summary || '');
 
 export interface CalendarSourceStatus {
   label: string;        // "Google" ou "Airbnb"
@@ -88,7 +95,13 @@ async function fetchCalendarEvents(calendarId: string): Promise<{ events: IcalEv
       const start = item.start ? parseEventDate(item.start) : null;
       const end = item.end ? parseEventDate(item.end) : null;
       if (start && end) {
-        events.push({ start, end, summary: item.summary || "" });
+        const summary = item.summary || "";
+        events.push({
+          start,
+          end,
+          summary,
+          kind: isUnavailabilityBlock(summary) ? "unavailable" : "reservation",
+        });
       }
       if (item.updated) {
         const u = new Date(item.updated);

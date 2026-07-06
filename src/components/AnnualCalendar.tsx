@@ -81,6 +81,9 @@ export function AnnualCalendar({ data, location, externalEvents, onCellClick }: 
 
     // 2. Airbnb External bookings (prevent duplicates if they overlap exactly)
     externalEvents.forEach((ext, idx) => {
+      // Règles de disponibilité Airbnb (« Not available ») : ne pas les
+      // peindre comme des jours occupés (délai mini, calendrier fermé à +1 an).
+      if (ext.kind === 'unavailable') return;
       const isAlreadyIncluded = list.some(b => {
         // Simple overlapping or date coincidence check
         return isSameDay(b.start, ext.start) && isSameDay(b.end, ext.end);

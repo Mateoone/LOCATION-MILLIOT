@@ -107,6 +107,8 @@ export function SimpleCalendar({ data, location, externalEvents, loadingExternal
 
   const unsyncedExternal = useMemo(() => {
     return externalEvents.filter(ext => {
+      // Règles de dispo Airbnb (délai mini, calendrier fermé…) : pas des résas.
+      if (ext.kind === 'unavailable') return false;
       if (ext.end < now) return false; // Only care about syncing upcoming dates typically
       const hasOverlap = events.some(int => {
         return ext.start < int.end && int.start < ext.end;
