@@ -1,26 +1,25 @@
 {
-  "name": "react-example",
+  "name": "location-milliot",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "start": "node server.mjs",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit",
+    "deploy": "gcloud run deploy gestionnaire-de-locations --source . --region us-west1 --project gen-lang-client-0804069470 --allow-unauthenticated --quiet"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
     "@react-pdf/renderer": "^4.5.1",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "date-fns": "^4.3.0",
-    "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^12.13.0",
     "lucide-react": "^0.546.0",
-    "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.8.1",
@@ -29,7 +28,6 @@
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
-    "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
