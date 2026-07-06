@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
 import { format } from 'date-fns';
 import { SheetLocation, SheetData, fetchSheetData, updateSheetRow, ReservationRow } from '../lib/sheets';
-import { Calendar, CreditCard, Edit3, ArrowUpDown, Check, X, Phone, Globe, Briefcase, MapPin, List, RefreshCw, Search, FileText, Loader2 } from 'lucide-react';
+import { Calendar, CreditCard, Edit3, ArrowUpDown, Check, X, Phone, Globe, Briefcase, MapPin, List, RefreshCw, Search, FileText, Loader2, Pencil } from 'lucide-react';
 import { EditRowModal } from './EditRowModal';
 import { SimpleCalendar } from './SimpleCalendar';
 import { AnnualCalendar } from './AnnualCalendar';
@@ -243,17 +243,42 @@ export function LocationView({ location }: { location: SheetLocation }) {
     }
   };
 
+  // Une ligne Airbnb « à compléter » : source Airbnb + nom ou prix manquant
+  // (les dates viennent de l'iCal, le nom et le prix se saisissent à la main).
+  const rowNeedsCompletion = useMemo(() => {
+    if (!data) return () => false;
+    const { sourceHeader, nameHeader, priceHeader } = detectHeaders(data.headers);
+    return (row: ReservationRow): boolean => {
+      const src = sourceHeader ? String(row[sourceHeader] || '') : '';
+      if (!/airbnb/i.test(src)) return false;
+      const nameVal = nameHeader ? String(row[nameHeader] || '').trim() : '';
+      const priceVal = priceHeader ? String(row[priceHeader] || '').trim() : '';
+      const nameMissing = !nameVal || /^(reserved|airbnb|blocage|voyageur airbnb|indisponible|not available)/i.test(nameVal);
+      const priceMissing = !!priceHeader && (!priceVal || !/\d/.test(priceVal));
+      return nameMissing || priceMissing;
+    };
+  }, [data]);
+
+  const toCompleteCount = useMemo(
+    () => (data ? data.rows.filter(rowNeedsCompletion).length : 0),
+    [data, rowNeedsCompletion]
+  );
+
+  const [onlyToComplete, setOnlyToComplete] = useState(false);
+
   const filteredRows = useMemo(() => {
-    if (!searchQuery.trim()) return sortedRows;
+    let rows = sortedRows;
+    if (onlyToComplete) rows = rows.filter(rowNeedsCompletion);
+    if (!searchQuery.trim()) return rows;
     const query = searchQuery.toLowerCase();
-    return sortedRows.filter(row => {
+    return rows.filter(row => {
       // Check if any of the row's values (except id, rowIndex) matches the query
       return Object.entries(row).some(([key, val]) => {
         if (key === 'id' || key === 'rowIndex') return false;
         return String(val).toLowerCase().includes(query);
       });
     });
-  }, [sortedRows, searchQuery]);
+  }, [sortedRows, searchQuery, onlyToComplete, rowNeedsCompletion]);
 
   if (loading) {
     return <div className="flex-1 p-8 flex items-center justify-center text-slate-500 bg-slate-900">Chargement des données...</div>;
@@ -306,7 +331,19 @@ export function LocationView({ location }: { location: SheetLocation }) {
               ))
             )}
           </div>
-          <p className="text-slate-500 text-xs mt-1">{data.rows.length} enregistrements trouvés.</p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-slate-500 text-xs">{data.rows.length} enregistrements trouvés.</p>
+            {toCompleteCount > 0 && (
+              <button
+                onClick={() => { setView('table'); setOnlyToComplete(true); }}
+                title="Réservations Airbnb dont il manque le nom ou le prix"
+                className="flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition-colors"
+              >
+                <Pencil className="w-3 h-3" />
+                {toCompleteCount} à compléter
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex items-center space-x-1 sm:space-x-2 bg-slate-950 p-1 rounded-lg border border-slate-800 shrink-0">
           <button
@@ -404,17 +441,29 @@ export function LocationView({ location }: { location: SheetLocation }) {
       )}
       {view === 'table' ? (
         <div className="flex-1 flex flex-col min-h-0 gap-4">
-          <div className="relative shrink-0 max-w-sm">
-             <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-500">
-               <Search className="w-4 h-4" />
-             </span>
-             <input
-               type="text"
-               placeholder="Rechercher (nom, date, montant)..."
-               value={searchQuery}
-               onChange={e => setSearchQuery(e.target.value)}
-               className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:ring-1 focus:ring-purple-500 focus:border-purple-500 text-sm text-slate-200 outline-none transition-all placeholder:text-slate-600 shadow-sm"
-             />
+          <div className="flex items-center gap-3 shrink-0 flex-wrap">
+            <div className="relative max-w-sm flex-1 min-w-[200px]">
+               <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-500">
+                 <Search className="w-4 h-4" />
+               </span>
+               <input
+                 type="text"
+                 placeholder="Rechercher (nom, date, montant)..."
+                 value={searchQuery}
+                 onChange={e => setSearchQuery(e.target.value)}
+                 className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl focus:ring-1 focus:ring-purple-500 focus:border-purple-500 text-sm text-slate-200 outline-none transition-all placeholder:text-slate-600 shadow-sm"
+               />
+            </div>
+            {onlyToComplete && (
+              <button
+                onClick={() => setOnlyToComplete(false)}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30 hover:bg-amber-500/20 transition-colors"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                À compléter uniquement
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
           <div className="border border-slate-800 rounded-xl bg-slate-950/50 flex-1 flex flex-col min-h-0">
             <div className="overflow-x-auto overflow-y-auto flex-1">
@@ -437,33 +486,46 @@ export function LocationView({ location }: { location: SheetLocation }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
-                  {filteredRows.map((row, idx) => (
-                  <tr key={row.id} className="hover:bg-slate-900/50 transition-colors group">
+                  {filteredRows.map((row, idx) => {
+                  const needsCompletion = rowNeedsCompletion(row);
+                  return (
+                  <tr key={row.id} className={`transition-colors group ${needsCompletion ? 'bg-amber-500/[0.06] hover:bg-amber-500/10' : 'hover:bg-slate-900/50'}`}>
                     {data.headers.map(header => (
                       <td key={header} className="px-4 py-3">
                         <TableCell header={header} val={row[header]} />
                       </td>
                     ))}
                     <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {needsCompletion && (
+                        <button
+                          onClick={() => setEditingRow(row)}
+                          className="text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors inline-flex items-center gap-1.5 mr-1 align-middle"
+                          title="Renseigner le nom et le prix de cette réservation Airbnb"
+                        >
+                          <Pencil className="w-3 h-3" />
+                          Compléter
+                        </button>
+                      )}
                       {['PORTIVY', 'BAS', 'HAUT'].includes(location) && (
-                        <button 
+                        <button
                           onClick={() => setContractRow(row)}
-                          className="text-amber-400 hover:text-amber-300 p-1.5 rounded-lg hover:bg-amber-500/10 transition-colors opacity-0 group-hover:opacity-100 inline-flex items-center justify-center mr-1"
+                          className="text-amber-400 hover:text-amber-300 p-1.5 rounded-lg hover:bg-amber-500/10 transition-colors opacity-0 group-hover:opacity-100 inline-flex items-center justify-center mr-1 align-middle"
                           title="Générer un contrat"
                         >
                           <FileText className="w-4 h-4" />
                         </button>
                       )}
-                      <button 
+                      <button
                         onClick={() => setEditingRow(row)}
-                        className="text-indigo-400 hover:text-indigo-300 p-1.5 rounded-lg hover:bg-indigo-500/10 transition-colors opacity-0 group-hover:opacity-100 inline-flex items-center justify-center"
+                        className="text-indigo-400 hover:text-indigo-300 p-1.5 rounded-lg hover:bg-indigo-500/10 transition-colors opacity-0 group-hover:opacity-100 inline-flex items-center justify-center align-middle"
                         title="Modifier cette ligne"
                       >
                         <Edit3 className="w-4 h-4" />
                       </button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
