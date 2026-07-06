@@ -145,12 +145,10 @@ export function LocationView({ location }: { location: SheetLocation }) {
     return () => window.removeEventListener(AUTH_RESTORED_EVENT, loadData);
   }, [location]);
 
-  // Chevauchements à venir (Sheet ↔ Sheet ou Sheet ↔ Airbnb) pour cette maison.
+  // Chevauchements actuels/à venir (le filtre "période passée" est dans findConflicts).
   const conflicts = useMemo(() => {
     if (!data || data.headers.length === 0) return [];
-    const bookings = buildBookings(data, location, externalEvents);
-    const now = Date.now();
-    return findConflicts(bookings).filter(c => c.a.end.getTime() >= now || c.b.end.getTime() >= now);
+    return findConflicts(buildBookings(data, location, externalEvents));
   }, [data, location, externalEvents]);
 
   const [aligning, setAligning] = useState(false);

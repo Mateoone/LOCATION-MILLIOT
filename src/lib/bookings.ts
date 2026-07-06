@@ -110,10 +110,14 @@ const isAirbnb = (b: UnifiedBooking) => b.isExternal || /airbnb/i.test(b.source)
 // Deux séjours d'une même maison se chevauchent si l'un commence avant la fin
 // de l'autre (fin exclusive → le back-to-back checkout=checkin n'est PAS un
 // conflit). On ignore le cas « événement Airbnb externe vs ligne Sheet Airbnb »
-// qui décrivent la même réservation.
+// qui décrivent la même réservation, ainsi que les chevauchements entièrement
+// passés (la période commune doit toucher aujourd'hui ou l'avenir).
 export function findConflicts(bookings: UnifiedBooking[]): BookingConflict[] {
   const conflicts: BookingConflict[] = [];
   const sorted = [...bookings].sort((x, y) => x.start.getTime() - y.start.getTime());
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayMs = today.getTime();
 
   for (let i = 0; i < sorted.length; i++) {
     for (let j = i + 1; j < sorted.length; j++) {
@@ -122,6 +126,8 @@ export function findConflicts(bookings: UnifiedBooking[]): BookingConflict[] {
       if (a.location !== b.location) continue;
       if (b.start.getTime() >= a.end.getTime()) break; // trié : plus aucun chevauchement possible avec a
       if (a.start.getTime() >= b.end.getTime()) continue;
+      // Fin de la période commune : si elle est déjà passée, aucun intérêt.
+      if (Math.min(a.end.getTime(), b.end.getTime()) < todayMs) continue;
       // Miroir Airbnb (agenda externe) ↔ ligne Airbnb du Sheet : même résa.
       if (isAirbnb(a) && isAirbnb(b) && a.isExternal !== b.isExternal) continue;
       conflicts.push({ a, b });
