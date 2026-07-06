@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
-import { format } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { SheetLocation, SheetData, fetchSheetData, updateSheetRow, ReservationRow } from '../lib/sheets';
 import { Calendar, CreditCard, Edit3, ArrowUpDown, Check, X, Phone, Globe, Briefcase, MapPin, List, RefreshCw, Search, FileText, Loader2 } from 'lucide-react';
 import { EditRowModal } from './EditRowModal';
@@ -162,14 +162,16 @@ export function LocationView({ location }: { location: SheetLocation }) {
       alert("Impossible de trouver les colonnes de dates (début/fin) dans le tableau.");
       return;
     }
+    // Convention tableau : « fin » = dernière nuit. Le DTEND Airbnb étant le
+    // jour du départ (exclusif), on écrit départ − 1 jour.
     const newStart = format(ext.start, 'dd/MM/yyyy');
-    const newEnd = format(ext.end, 'dd/MM/yyyy');
+    const newEnd = format(subDays(ext.end, 1), 'dd/MM/yyyy');
     const oldStart = sheetBooking.row[startHeader] || '?';
     const oldEnd = sheetBooking.row[endHeader] || '?';
     if (!window.confirm(
       `Caler « ${sheetBooking.title} » sur les dates Airbnb ?\n\n` +
       `Tableau actuel : ${oldStart} → ${oldEnd}\n` +
-      `Airbnb :        ${newStart} → ${newEnd}\n\n` +
+      `Airbnb :        ${newStart} → ${newEnd} (dernière nuit)\n\n` +
       `La ligne du Google Sheet sera mise à jour.`
     )) return;
     try {
@@ -366,7 +368,7 @@ export function LocationView({ location }: { location: SheetLocation }) {
                           disabled={aligning}
                           className="px-2.5 py-1 text-[11px] font-bold rounded-md bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 transition-colors disabled:opacity-50 whitespace-nowrap"
                         >
-                          {aligning ? '…' : `Caler sur Airbnb (${format(ext.start, 'dd/MM')}→${format(ext.end, 'dd/MM')})`}
+                          {aligning ? '…' : `Caler sur Airbnb (${format(ext.start, 'dd/MM')}→${format(subDays(ext.end, 1), 'dd/MM')})`}
                         </button>
                         <button
                           onClick={() => setEditingRow(sheetSide.row!)}
