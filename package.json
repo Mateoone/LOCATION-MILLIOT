@@ -10,7 +10,7 @@
     "start": "node server.mjs",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "deploy": "gcloud run deploy gestionnaire-de-locations --source . --region us-west1 --project gen-lang-client-0804069470 --allow-unauthenticated --quiet"
+    "deploy": "gcloud run deploy gestionnaire-de-locations --source . --region us-west1 --project gen-lang-client-0804069470"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",
