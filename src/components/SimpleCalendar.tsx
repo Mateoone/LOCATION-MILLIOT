@@ -134,7 +134,7 @@ export function SimpleCalendar({ data, location, externalEvents, loadingExternal
       
       // On répercute immédiatement l'ajout dans l'état parent pour que
       // l'UI se mette à jour sans re-télécharger le calendrier.
-      onExternalAdded({ start: evt.start, end: evt.end, summary: evt.title });
+      onExternalAdded({ start: evt.start, end: evt.end, summary: evt.title, kind: 'reservation', origin: 'google' });
       
       alert(`Les dates ${format(evt.start, 'dd/MM/yyyy')} ➔ ${format(evt.end, 'dd/MM/yyyy')} ont été bloquées sur Airbnb avec succès (via Google Agenda).`);
     } catch (e: any) {

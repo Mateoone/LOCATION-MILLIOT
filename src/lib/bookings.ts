@@ -85,13 +85,31 @@ export function buildBookings(
     if (ext.kind === 'unavailable') return;
     const key = `${dayKey(ext.start)}|${dayKey(ext.end)}`;
     if (seen.has(key)) return;
+
+    // Miroir d'une résa du tableau (à ignorer même si les dates ne collent
+    // pas exactement) :
+    // - un événement de NOTRE agenda Google qui chevauche une ligne du
+    //   tableau est le blocage manuel de cette résa (ex. bloc « Mme X »
+    //   posé pour une résa directe) ;
+    // - un « Reserved » Airbnb qui chevauche une ligne déjà source Airbnb
+    //   décrit la même réservation.
+    // En revanche un « Reserved » Airbnb chevauchant une résa DIRECTE reste
+    // affiché : vrai risque de double réservation → le conflit doit sortir.
+    const origin = ext.origin ?? 'airbnb';
+    const isMirror = list.some(b =>
+      !b.isExternal &&
+      b.start < ext.end && ext.start < b.end &&
+      (origin === 'google' || /airbnb/i.test(b.source))
+    );
+    if (isMirror) return;
+
     seen.add(key);
     list.push({
       id: `ext-${location}-${idx}`,
-      title: ext.summary || 'Airbnb',
+      title: ext.summary || (origin === 'google' ? 'Blocage agenda' : 'Airbnb'),
       start: ext.start,
       end: ext.end,
-      source: 'Airbnb',
+      source: origin === 'google' ? 'Agenda' : 'Airbnb',
       location,
       isExternal: true,
     });

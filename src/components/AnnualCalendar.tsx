@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { SheetData, ReservationRow, SheetLocation } from '../lib/sheets';
-import { parse, isValid, format, isSameDay } from 'date-fns';
+import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { IcalEvent } from '../lib/ical';
+import { buildBookings, UnifiedBooking } from '../lib/bookings';
 
 interface AnnualCalendarProps {
   data: SheetData;
@@ -12,96 +13,15 @@ interface AnnualCalendarProps {
   onCellClick: (row: ReservationRow) => void;
 }
 
-interface UnifiedBooking {
-  id: string;
-  title: string;
-  start: Date;
-  end: Date;
-  source: string;
-  row?: ReservationRow;
-}
-
 export function AnnualCalendar({ data, location, externalEvents, onCellClick }: AnnualCalendarProps) {
   const [selectedYear, setSelectedYear] = useState<number>(() => new Date().getFullYear());
 
-  // Parse Google Sheets data into typed reservation events
-  const startHeader = useMemo(() => {
-    return data.headers.find(h => /début|debut|arrivée|arrivee|start/i.test(h)) || 
-           data.headers.find(h => /date/i.test(h));
-  }, [data.headers]);
-
-  const endHeader = useMemo(() => {
-    return data.headers.find(h => /fin|départ|depart|end/i.test(h));
-  }, [data.headers]);
-
-  const nameHeader = useMemo(() => {
-    return data.headers.find(h => /nom|locataire|client|name/i.test(h)) || data.headers[0];
-  }, [data.headers]);
-
-  const priceHeader = useMemo(() => {
-    return data.headers.find(h => /prix|loyer|total|montant|tarif/i.test(h));
-  }, [data.headers]);
-
-  const sourceHeader = useMemo(() => {
-    return data.headers.find(h => /source|plateforme|origine/i.test(h));
-  }, [data.headers]);
-
-  const parseDateStr = (dateStr: string) => {
-    if (!dateStr) return null;
-    let parsed = parse(dateStr, 'dd/MM/yyyy', new Date());
-    if (!isValid(parsed)) parsed = new Date(dateStr);
-    return isValid(parsed) ? parsed : null;
-  };
-
-  // Merge internal sheets bookings and external Airbnb calendar events
-  const unifiedBookings = useMemo(() => {
-    const list: UnifiedBooking[] = [];
-
-    // 1. Google Sheet bookings
-    if (startHeader) {
-      data.rows.forEach((row, idx) => {
-        const startStr = row[startHeader];
-        const endStr = endHeader ? row[endHeader] : null;
-        const start = parseDateStr(startStr);
-        const end = endStr ? parseDateStr(endStr) : null;
-
-        if (start) {
-          const actualEnd = end || start;
-          list.push({
-            id: `sheet-${row.id || idx}`,
-            title: row[nameHeader] || 'Réservation',
-            start,
-            end: actualEnd,
-            source: (sourceHeader && row[sourceHeader]) ? row[sourceHeader] : 'Direct',
-            row
-          });
-        }
-      });
-    }
-
-    // 2. Airbnb External bookings (prevent duplicates if they overlap exactly)
-    externalEvents.forEach((ext, idx) => {
-      // Règles de disponibilité Airbnb (« Not available ») : ne pas les
-      // peindre comme des jours occupés (délai mini, calendrier fermé à +1 an).
-      if (ext.kind === 'unavailable') return;
-      const isAlreadyIncluded = list.some(b => {
-        // Simple overlapping or date coincidence check
-        return isSameDay(b.start, ext.start) && isSameDay(b.end, ext.end);
-      });
-
-      if (!isAlreadyIncluded) {
-        list.push({
-          id: `ext-${idx}`,
-          title: ext.summary || 'Airbnb Externe',
-          start: ext.start,
-          end: ext.end,
-          source: 'Airbnb'
-        });
-      }
-    });
-
-    return list;
-  }, [data.rows, startHeader, endHeader, nameHeader, sourceHeader, externalEvents]);
+  // Fusion tableau + agendas via la logique commune (déduplication des
+  // miroirs Google/Airbnb, exclusion des blocs de disponibilité, etc.).
+  const unifiedBookings = useMemo(
+    () => buildBookings(data, location, externalEvents),
+    [data, location, externalEvents]
+  );
 
   // Switch years
   const handlePrevYear = () => setSelectedYear(prev => prev - 1);

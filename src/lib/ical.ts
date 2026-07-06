@@ -9,6 +9,9 @@ export interface IcalEvent {
   // calendrier non ouvert au-delà d'un an, fermeture manuelle) — PAS une
   // réservation : à exclure des conflits, synchros et calendriers.
   kind?: 'reservation' | 'unavailable';
+  // Provenance : notre agenda Google (blocages/miroirs de résas du tableau)
+  // ou l'import Airbnb (vraies réservations « Reserved »).
+  origin?: 'google' | 'airbnb';
 }
 
 export const isUnavailabilityBlock = (summary: string) =>
@@ -64,7 +67,7 @@ function parseEventDate(d: { date?: string; dateTime?: string }): Date | null {
   return null;
 }
 
-async function fetchCalendarEvents(calendarId: string): Promise<{ events: IcalEvent[]; updated: Date | null }> {
+async function fetchCalendarEvents(calendarId: string, origin: 'google' | 'airbnb'): Promise<{ events: IcalEvent[]; updated: Date | null }> {
   const timeMin = new Date(new Date().getFullYear() - HISTORY_YEARS, 0, 1).toISOString();
   const events: IcalEvent[] = [];
   let updated: Date | null = null;
@@ -101,6 +104,7 @@ async function fetchCalendarEvents(calendarId: string): Promise<{ events: IcalEv
           end,
           summary,
           kind: isUnavailabilityBlock(summary) ? "unavailable" : "reservation",
+          origin,
         });
       }
       if (item.updated) {
@@ -124,7 +128,9 @@ export async function fetchCalendarsWithStatus(
 
   // Chaque agenda est lu indépendamment : si l'un échoue (ex. agenda Airbnb
   // non partagé avec le compte connecté), les autres restent affichés.
-  const results = await Promise.allSettled(calendars.map(c => fetchCalendarEvents(c.id)));
+  const results = await Promise.allSettled(
+    calendars.map(c => fetchCalendarEvents(c.id, c.label === 'Airbnb' ? 'airbnb' : 'google'))
+  );
 
   const merged: IcalEvent[] = [];
   const seen = new Set<string>();
