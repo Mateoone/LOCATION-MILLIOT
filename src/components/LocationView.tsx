@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react';
-import { SheetLocation, SheetData, fetchSheetData, ReservationRow } from '../lib/sheets';
+import { format } from 'date-fns';
+import { SheetLocation, SheetData, fetchSheetData, updateSheetRow, ReservationRow } from '../lib/sheets';
 import { Calendar, CreditCard, Edit3, ArrowUpDown, Check, X, Phone, Globe, Briefcase, MapPin, List, RefreshCw, Search, FileText, Loader2 } from 'lucide-react';
 import { EditRowModal } from './EditRowModal';
 import { SimpleCalendar } from './SimpleCalendar';
@@ -17,7 +18,7 @@ const LazyFallback = () => (
 );
 import { BarChart as BarChartIcon, AlertTriangle } from 'lucide-react';
 import { fetchCalendarsWithStatus, IcalEvent, CalendarSourceStatus } from '../lib/ical';
-import { buildBookings, findConflicts } from '../lib/bookings';
+import { buildBookings, findConflicts, detectHeaders, UnifiedBooking } from '../lib/bookings';
 import { AUTH_RESTORED_EVENT } from '../lib/auth';
 
 function timeAgo(d: Date | null): string {
@@ -151,6 +152,42 @@ export function LocationView({ location }: { location: SheetLocation }) {
     const now = Date.now();
     return findConflicts(bookings).filter(c => c.a.end.getTime() >= now || c.b.end.getTime() >= now);
   }, [data, location, externalEvents]);
+
+  const [aligning, setAligning] = useState(false);
+
+  // Résolution d'un conflit Sheet ↔ Airbnb : Airbnb fait foi (impossible à
+  // modifier à distance), on réécrit les dates de la ligne du tableau.
+  const handleAlignToAirbnb = async (sheetBooking: UnifiedBooking, ext: UnifiedBooking) => {
+    if (!data || !sheetBooking.row || aligning) return;
+    const { startHeader, endHeader } = detectHeaders(data.headers);
+    if (!startHeader || !endHeader) {
+      alert("Impossible de trouver les colonnes de dates (début/fin) dans le tableau.");
+      return;
+    }
+    const newStart = format(ext.start, 'dd/MM/yyyy');
+    const newEnd = format(ext.end, 'dd/MM/yyyy');
+    const oldStart = sheetBooking.row[startHeader] || '?';
+    const oldEnd = sheetBooking.row[endHeader] || '?';
+    if (!window.confirm(
+      `Caler « ${sheetBooking.title} » sur les dates Airbnb ?\n\n` +
+      `Tableau actuel : ${oldStart} → ${oldEnd}\n` +
+      `Airbnb :        ${newStart} → ${newEnd}\n\n` +
+      `La ligne du Google Sheet sera mise à jour.`
+    )) return;
+    try {
+      setAligning(true);
+      const updated: Record<string, string> = {};
+      data.headers.forEach(h => { updated[h] = sheetBooking.row![h] || ''; });
+      updated[startHeader] = newStart;
+      updated[endHeader] = newEnd;
+      await updateSheetRow(location, sheetBooking.row.rowIndex, data.headers, updated);
+      await loadData();
+    } catch (e: any) {
+      alert('Échec de la mise à jour du tableau : ' + (e.message || e));
+    } finally {
+      setAligning(false);
+    }
+  };
 
   const sortedRows = useMemo(() => {
     if (!data) return [];
@@ -307,20 +344,63 @@ export function LocationView({ location }: { location: SheetLocation }) {
 
       <div className="flex-1 overflow-hidden flex flex-col p-6 lg:p-8 shrink min-h-0 bg-slate-900">
       {conflicts.length > 0 && (
-        <div className="mb-4 shrink-0 bg-rose-950/30 border border-rose-800/60 rounded-xl p-3">
+        <div className="mb-4 shrink-0 bg-rose-950/30 border border-rose-800/60 rounded-xl p-3 max-h-56 overflow-y-auto">
           <div className="flex items-center gap-2 text-rose-400 text-xs font-bold uppercase tracking-widest mb-2">
             <AlertTriangle className="w-4 h-4" />
             Chevauchement{conflicts.length > 1 ? 's' : ''} détecté{conflicts.length > 1 ? 's' : ''} ({conflicts.length})
           </div>
-          <div className="space-y-1">
-            {conflicts.slice(0, 4).map((c, i) => (
-              <p key={i} className="text-xs text-rose-300/90 font-mono">
-                « {c.a.title} » ({c.a.start.toLocaleDateString('fr-FR')}→{c.a.end.toLocaleDateString('fr-FR')})
-                {'  ×  '}
-                « {c.b.title} » ({c.b.start.toLocaleDateString('fr-FR')}→{c.b.end.toLocaleDateString('fr-FR')})
-              </p>
-            ))}
-            {conflicts.length > 4 && <p className="text-[11px] text-rose-400/70">+ {conflicts.length - 4} autre(s)…</p>}
+          <div className="space-y-2">
+            {conflicts.map((c, i) => {
+              const ext = c.a.isExternal ? c.a : c.b.isExternal ? c.b : null;
+              const sheetSide = c.a.isExternal ? c.b : c.a;
+              return (
+                <div key={i} className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between p-2 rounded-lg bg-rose-950/20 border border-rose-900/40">
+                  <p className="text-xs text-rose-300/90 font-mono min-w-0">
+                    « {c.a.title} » ({c.a.start.toLocaleDateString('fr-FR')}→{c.a.end.toLocaleDateString('fr-FR')})
+                    {'  ×  '}
+                    « {c.b.title} » ({c.b.start.toLocaleDateString('fr-FR')}→{c.b.end.toLocaleDateString('fr-FR')})
+                  </p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {ext && sheetSide.row ? (
+                      <>
+                        <button
+                          onClick={() => handleAlignToAirbnb(sheetSide, ext)}
+                          disabled={aligning}
+                          className="px-2.5 py-1 text-[11px] font-bold rounded-md bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 transition-colors disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {aligning ? '…' : `Caler sur Airbnb (${format(ext.start, 'dd/MM')}→${format(ext.end, 'dd/MM')})`}
+                        </button>
+                        <button
+                          onClick={() => setEditingRow(sheetSide.row!)}
+                          className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors whitespace-nowrap"
+                        >
+                          Modifier
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {c.a.row && (
+                          <button
+                            onClick={() => setEditingRow(c.a.row!)}
+                            className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors whitespace-nowrap"
+                          >
+                            Modifier « {c.a.title.slice(0, 14)} »
+                          </button>
+                        )}
+                        {c.b.row && (
+                          <button
+                            onClick={() => setEditingRow(c.b.row!)}
+                            className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors whitespace-nowrap"
+                          >
+                            Modifier « {c.b.title.slice(0, 14)} »
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
