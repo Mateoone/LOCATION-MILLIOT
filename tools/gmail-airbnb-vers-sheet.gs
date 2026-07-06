@@ -223,3 +223,58 @@ function ecrireDansSheet_(infos) {
   feuille.appendRow(ligne);
   Logger.log('Ajouté dans %s : %s', infos.onglet, JSON.stringify(l));
 }
+
+// ═══════════════════════════════════════════════════ OUTILS DE DIAGNOSTIC ══
+// (à exécuter à la main pendant la mise au point ; aucun impact sur le Sheet)
+
+// Désactive le déclencheur automatique (tant que le parsing n'est pas validé).
+function desinstaller() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'traiterEmailsAirbnb') ScriptApp.deleteTrigger(t);
+  });
+  Logger.log('Déclencheur automatique supprimé.');
+}
+
+// Liste TOUS les emails reçus d'Airbnb sur 1 an (expéditeur + sujet + date),
+// pour voir quels types d'emails existent réellement (confirmation ou non).
+function explorerBoiteAirbnb() {
+  const threads = GmailApp.search('from:(airbnb.com OR @airbnb.fr) newer_than:1y', 0, 60);
+  Logger.log('%s fils Airbnb trouvés (1 an) :', threads.length);
+  const vus = {};
+  threads.forEach(th => {
+    th.getMessages().forEach(m => {
+      const s = m.getSubject() || '(sans sujet)';
+      const cle = s.replace(/[A-ZÉ][a-zéèê]+ [A-Z]/g, 'PRENOM').substring(0, 60);
+      vus[cle] = (vus[cle] || 0) + 1;
+      Logger.log('  %s | de:%s | %s', Utilities.formatDate(m.getDate(), 'Europe/Paris', 'yyyy-MM-dd'), m.getFrom().replace(/.*<|>.*/g, ''), s);
+    });
+  });
+  Logger.log('---\nTypes de sujets (regroupés) :');
+  Object.keys(vus).sort((a, b) => vus[b] - vus[a]).forEach(k => Logger.log('  [%s×] %s', vus[k], k));
+}
+
+// Affiche le corps COMPLET du dernier email Airbnb ressemblant à une
+// confirmation de réservation → permet de vérifier/ajuster le parsing.
+function dumpDernierEmailResa() {
+  const requetes = [
+    'from:(airbnb.com) subject:("Réservation confirmée" OR "Reservation confirmed") newer_than:1y',
+    'from:(airbnb.com) subject:(confirmée OR confirmed OR réservation OR reservation OR booking) newer_than:1y',
+    'from:(airbnb.com) newer_than:1y',
+  ];
+  for (const q of requetes) {
+    const th = GmailApp.search(q, 0, 5);
+    if (th.length) {
+      const m = th[0].getMessages()[0];
+      Logger.log('=== Requête gagnante : %s', q);
+      Logger.log('SUJET : %s', m.getSubject());
+      Logger.log('DE : %s', m.getFrom());
+      Logger.log('DATE : %s', m.getDate());
+      Logger.log('--- CORPS (texte brut, 3000 premiers car.) ---');
+      Logger.log(m.getPlainBody().substring(0, 3000));
+      Logger.log('--- PARSING ACTUEL ---');
+      Logger.log(JSON.stringify(extraireInfos_(m.getSubject(), m.getPlainBody())));
+      return;
+    }
+  }
+  Logger.log('Aucun email Airbnb trouvé sur 1 an.');
+}
