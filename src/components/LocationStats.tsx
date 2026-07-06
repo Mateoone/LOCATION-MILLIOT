@@ -67,9 +67,8 @@ export function LocationStats({ data }: LocationStatsProps) {
       const end = endStr ? parseDateStr(endStr) : null;
 
       if (!start) return;
-
-      // Convention tableau : « fin » = dernière nuit → nuits = (fin − début) + 1.
-      const days = end ? differenceInDays(end, start) + 1 : 1;
+      
+      const days = end ? differenceInDays(end, start) : 1;
       if (days <= 0) return;
       
       let priceVal = 0;

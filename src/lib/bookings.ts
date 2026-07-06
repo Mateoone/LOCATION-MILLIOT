@@ -1,4 +1,4 @@
-import { parse, isValid, addDays } from 'date-fns';
+import { parse, isValid } from 'date-fns';
 import { SheetData, ReservationRow, SheetLocation } from './sheets';
 import { IcalEvent } from './ical';
 
@@ -12,14 +12,6 @@ export interface UnifiedBooking {
   isExternal: boolean;  // true = vient d'un agenda (Airbnb), pas du Sheet
   row?: ReservationRow;
 }
-
-// Convention du tableau (règle Airbnb adoptée) : la colonne « fin »
-// enregistre la DERNIÈRE NUIT ; le départ a lieu le lendemain matin (<10 h).
-// Ex. départ dimanche matin → fin = samedi. Pour tous les calculs
-// d'intervalles, on convertit donc en fin EXCLUSIVE (= jour du départ),
-// alignée sur le DTEND exclusif d'Airbnb. Un départ et une arrivée le même
-// jour cohabitent sans conflit.
-export const sheetEndExclusive = (lastNight: Date): Date => addDays(lastNight, 1);
 
 export interface DetectedHeaders {
   startHeader?: string;
@@ -71,8 +63,7 @@ export function buildBookings(
     data.rows.forEach((row, idx) => {
       const start = parseFlexibleDate(row[startHeader]);
       if (!start) return;
-      const lastNight = (endHeader && parseFlexibleDate(row[endHeader])) || start;
-      const end = sheetEndExclusive(lastNight);
+      const end = (endHeader && parseFlexibleDate(row[endHeader])) || start;
       list.push({
         id: `sheet-${location}-${row.id || idx}`,
         title: (nameHeader && row[nameHeader]) || 'Réservation',

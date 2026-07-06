@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { SheetData, ReservationRow, SheetLocation, addSheetRow } from '../lib/sheets';
-import { parse, isValid, format, differenceInDays, addDays, subDays } from 'date-fns';
+import { parse, isValid, format, differenceInDays } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { ChevronDown, ChevronRight, Euro, Moon, Link, Plus, Loader2 } from 'lucide-react';
 import { IcalEvent } from '../lib/ical';
@@ -60,12 +60,9 @@ export function SimpleCalendar({ data, location, externalEvents, loadingExternal
       const end = endStr ? parseDateStr(endStr) : null;
 
       if (!start) return null;
-
-      // Convention tableau : « fin » = dernière nuit → départ le lendemain.
-      const lastNight = end || start;
-      const endExclusive = addDays(lastNight, 1);
-      const days = differenceInDays(endExclusive, start); // = nombre de nuits
-
+      
+      const days = end ? differenceInDays(end, start) : 1;
+      
       let priceStr = null;
       if (priceHeader && row[priceHeader]) {
         const val = row[priceHeader];
@@ -82,14 +79,13 @@ export function SimpleCalendar({ data, location, externalEvents, loadingExternal
       return {
         row,
         start,
-        end: lastNight,       // dernière nuit (affichage, fidèle au tableau)
-        endExclusive,         // jour du départ (calculs d'intervalles)
+        end: end || start,
         title: row[nameHeader] || 'Réservation',
         days: days > 0 ? days : 1,
         price: priceStr,
         source: sourceStr
       };
-    }).filter(Boolean) as { row: ReservationRow, start: Date, end: Date, endExclusive: Date, title: string, days: number, price: string | null, source: string | null }[];
+    }).filter(Boolean) as { row: ReservationRow, start: Date, end: Date, title: string, days: number, price: string | null, source: string | null }[];
   }, [data.rows, startHeader, endHeader, nameHeader, priceHeader, sourceHeader]);
 
   if (!startHeader) {
@@ -106,8 +102,8 @@ export function SimpleCalendar({ data, location, externalEvents, loadingExternal
   // Sort all events chronologically
   const sortedEvents = [...events].sort((a, b) => a.start.getTime() - b.start.getTime());
   
-  const upcomingEvents = sortedEvents.filter(e => e.endExclusive >= now);
-  const pastEvents = sortedEvents.filter(e => e.endExclusive < now);
+  const upcomingEvents = sortedEvents.filter(e => e.end >= now);
+  const pastEvents = sortedEvents.filter(e => e.end < now);
 
   const unsyncedExternal = useMemo(() => {
     return externalEvents.filter(ext => {
@@ -115,7 +111,7 @@ export function SimpleCalendar({ data, location, externalEvents, loadingExternal
       if (ext.kind === 'unavailable') return false;
       if (ext.end < now) return false; // Only care about syncing upcoming dates typically
       const hasOverlap = events.some(int => {
-        return ext.start < int.endExclusive && int.start < ext.end;
+        return ext.start < int.end && int.start < ext.end;
       });
       return !hasOverlap;
     }).sort((a, b) => a.start.getTime() - b.start.getTime());
@@ -124,7 +120,7 @@ export function SimpleCalendar({ data, location, externalEvents, loadingExternal
   const unsyncedInternal = useMemo(() => {
     return upcomingEvents.filter(int => {
       const hasOverlap = externalEvents.some(ext => {
-        return int.start < ext.end && ext.start < int.endExclusive;
+        return int.start < ext.end && ext.start < int.end;
       });
       return !hasOverlap;
     });
@@ -137,9 +133,8 @@ export function SimpleCalendar({ data, location, externalEvents, loadingExternal
       await addEventToGoogleCalendar(location, evt.start, evt.end, evt.title);
       
       // On répercute immédiatement l'ajout dans l'état parent pour que
-      // l'UI se mette à jour sans re-télécharger le calendrier. L'événement
-      // agenda a une fin exclusive (= jour du départ), comme ceux de l'API.
-      onExternalAdded({ start: evt.start, end: evt.endExclusive, summary: evt.title, kind: 'reservation' });
+      // l'UI se mette à jour sans re-télécharger le calendrier.
+      onExternalAdded({ start: evt.start, end: evt.end, summary: evt.title });
       
       alert(`Les dates ${format(evt.start, 'dd/MM/yyyy')} ➔ ${format(evt.end, 'dd/MM/yyyy')} ont été bloquées sur Airbnb avec succès (via Google Agenda).`);
     } catch (e: any) {
@@ -167,9 +162,8 @@ export function SimpleCalendar({ data, location, externalEvents, loadingExternal
       const prIdx = data.headers.findIndex(h => h === priceHeader);
       const srcIdx = data.headers.findIndex(h => h === sourceHeader);
       
-      // Convention tableau : « fin » = dernière nuit (DTEND Airbnb − 1 jour).
       if (stIdx !== -1) newRow[stIdx] = format(ext.start, 'dd/MM/yyyy');
-      if (edIdx !== -1) newRow[edIdx] = format(subDays(ext.end, 1), 'dd/MM/yyyy');
+      if (edIdx !== -1) newRow[edIdx] = format(ext.end, 'dd/MM/yyyy');
       if (nmIdx !== -1) newRow[nmIdx] = ext.summary || "Blocage externe";
       if (prIdx !== -1) newRow[prIdx] = "";
       if (srcIdx !== -1) newRow[srcIdx] = "Airbnb Externe";

@@ -16,18 +16,16 @@ export async function addEventToGoogleCalendar(
   const calendarId = CALENDAR_IDS[locationName];
   if (!calendarId) throw new Error("Calendar ID not found for location: " + locationName);
 
-  // Google Calendar API expects end date to be exclusive for all-day events.
-  // We'll format as YYYY-MM-DD
-  const endExclusive = new Date(end);
-  endExclusive.setDate(endExclusive.getDate() + 1);
-
+  // Convention commune tableau/Airbnb : « fin » = jour du départ. Le DTEND
+  // des événements journée entière étant déjà exclusif, on l'utilise tel quel
+  // (l'ancien +1 bloquait un jour de trop sur Airbnb).
   const eventPayload = {
     summary: summary || "Réservation",
     start: {
       date: format(start, 'yyyy-MM-dd')
     },
     end: {
-      date: format(endExclusive, 'yyyy-MM-dd')
+      date: format(end, 'yyyy-MM-dd')
     },
     transparency: "opaque" // blocks the time
   };

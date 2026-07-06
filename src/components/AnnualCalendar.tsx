@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { SheetData, ReservationRow, SheetLocation } from '../lib/sheets';
-import { parse, isValid, format, isSameDay, addDays } from 'date-fns';
+import { parse, isValid, format, isSameDay } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { IcalEvent } from '../lib/ical';
@@ -66,9 +66,7 @@ export function AnnualCalendar({ data, location, externalEvents, onCellClick }: 
         const end = endStr ? parseDateStr(endStr) : null;
 
         if (start) {
-          // Convention tableau : « fin » = dernière nuit → l'intervalle
-          // exclusif s'arrête au lendemain (jour du départ), comme Airbnb.
-          const actualEnd = addDays(end || start, 1);
+          const actualEnd = end || start;
           list.push({
             id: `sheet-${row.id || idx}`,
             title: row[nameHeader] || 'Réservation',
