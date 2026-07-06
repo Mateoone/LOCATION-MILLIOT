@@ -57,10 +57,11 @@ export function OverviewDashboard({ onOpenLocation }: OverviewDashboardProps) {
   const horizonEnd = new Date(today);
   horizonEnd.setDate(horizonEnd.getDate() + HORIZON_DAYS);
 
+  // Toutes les arrivées futures, sans limite d'horizon.
   const arrivals = useMemo(
     () =>
       bookings
-        .filter(b => b.start >= today && b.start < horizonEnd)
+        .filter(b => b.start >= today)
         .sort((a, b) => a.start.getTime() - b.start.getTime()),
     [bookings]
   );
@@ -113,7 +114,9 @@ export function OverviewDashboard({ onOpenLocation }: OverviewDashboardProps) {
           </div>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-xs font-mono text-slate-300">{format(d, 'EEE d MMM', { locale: fr })}</p>
+          <p className="text-xs font-mono text-slate-300">
+            {format(d, d.getFullYear() === today.getFullYear() ? 'EEE d MMM' : 'EEE d MMM yyyy', { locale: fr })}
+          </p>
           <p className="text-[10px] text-slate-500">{relDay(d)}</p>
         </div>
       </button>
@@ -144,7 +147,7 @@ export function OverviewDashboard({ onOpenLocation }: OverviewDashboardProps) {
           <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
             <CalendarDays className="w-5 h-5 text-sky-400" /> Vue d'ensemble
           </h1>
-          <p className="text-slate-500 text-xs mt-1">Arrivées, départs et séjours en cours sur {HORIZON_DAYS} jours — toutes maisons.</p>
+          <p className="text-slate-500 text-xs mt-1">Toutes les arrivées à venir, départs sur {HORIZON_DAYS} jours et séjours en cours — toutes maisons.</p>
         </div>
         <button onClick={load} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors" title="Rafraîchir">
           <RefreshCw className="w-4 h-4" />
@@ -194,7 +197,7 @@ export function OverviewDashboard({ onOpenLocation }: OverviewDashboardProps) {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Section title="Prochaines arrivées" icon={<LogIn className="w-4 h-4 text-sky-400" />} items={arrivals} dateField="start" empty="Aucune arrivée à venir." />
+          <Section title="Arrivées à venir" icon={<LogIn className="w-4 h-4 text-sky-400" />} items={arrivals} dateField="start" empty="Aucune arrivée à venir." />
           <Section title="Prochains départs" icon={<LogOut className="w-4 h-4 text-amber-400" />} items={departures} dateField="end" empty="Aucun départ à venir." />
         </div>
       </div>
