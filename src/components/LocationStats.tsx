@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { SheetData } from '../lib/sheets';
+import { detectHeaders } from '../lib/bookings';
 import { parse, isValid, differenceInDays } from 'date-fns';
 import {
   BarChart,
@@ -19,26 +20,11 @@ interface LocationStatsProps {
 }
 
 export function LocationStats({ data }: LocationStatsProps) {
-  const startHeader = useMemo(() => {
-    return data.headers.find(h => /début|debut|arrivée|arrivee|start/i.test(h)) || 
-           data.headers.find(h => /date/i.test(h));
-  }, [data.headers]);
-
-  const endHeader = useMemo(() => {
-    return data.headers.find(h => /fin|départ|depart|end/i.test(h));
-  }, [data.headers]);
-
-  const nameHeader = useMemo(() => {
-    return data.headers.find(h => /nom|locataire|client|name/i.test(h)) || data.headers[0];
-  }, [data.headers]);
-
-  const priceHeader = useMemo(() => {
-    return data.headers.find(h => /prix|loyer|total|montant|tarif/i.test(h));
-  }, [data.headers]);
-
-  const sourceHeader = useMemo(() => {
-    return data.headers.find(h => /source|plateforme|origine/i.test(h));
-  }, [data.headers]);
+  // Détection commune et durcie des colonnes (lib/bookings.ts).
+  const { startHeader, endHeader, nameHeader, priceHeader, sourceHeader } = useMemo(
+    () => detectHeaders(data.headers),
+    [data.headers]
+  );
 
   const parseDateStr = (dateStr: string) => {
     if (!dateStr) return null;

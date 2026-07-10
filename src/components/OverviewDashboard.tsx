@@ -32,7 +32,7 @@ export function OverviewDashboard({ onOpenLocation }: OverviewDashboardProps) {
       const perLocation = await Promise.all(
         LOCATIONS.map(async (loc) => {
           const [sheet, external] = await Promise.all([
-            fetchSheetData(loc).catch(() => ({ headers: [], rows: [] })),
+            fetchSheetData(loc).catch(() => ({ headers: [], rawHeaders: [], rows: [] })),
             fetchExternalCalendar(loc).catch(() => []),
           ]);
           return buildBookings(sheet, loc, external);

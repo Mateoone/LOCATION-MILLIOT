@@ -178,7 +178,7 @@ export function LocationView({ location }: { location: SheetLocation }) {
       data.headers.forEach(h => { updated[h] = sheetBooking.row![h] || ''; });
       updated[startHeader] = newStart;
       updated[endHeader] = newEnd;
-      await updateSheetRow(location, sheetBooking.row.rowIndex, data.headers, updated);
+      await updateSheetRow(location, sheetBooking.row.rowIndex, data.headers, updated, data.rawHeaders);
       await loadData();
     } catch (e: any) {
       alert('Échec de la mise à jour du tableau : ' + (e.message || e));
@@ -564,7 +564,8 @@ export function LocationView({ location }: { location: SheetLocation }) {
       {editingRow && (
         <EditRowModal 
           row={editingRow} 
-          headers={data.headers} 
+          headers={data.headers}
+          rawHeaders={data.rawHeaders}
           location={location} 
           onClose={() => setEditingRow(null)} 
           onSaved={() => {

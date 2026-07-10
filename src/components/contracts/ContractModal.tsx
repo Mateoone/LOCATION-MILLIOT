@@ -40,13 +40,13 @@ export const ContractModal: React.FC<ContractModalProps> = ({ isOpen, onClose, r
   useEffect(() => {
     if (reservation) {
       const keys = Object.keys(reservation);
-      const nameKey = keys.find(k => /nom|locataire|client|name|voyageur/i.test(k) && !/tél|phone|email/i.test(k));
+      const nameKey = keys.find(k => /nom|locataire|client|name|voyageur/i.test(k) && !/nombre|nb |tél|tel|phone|email|mail|adresse/i.test(k));
       const phoneKey = keys.find(k => /tél|tel|phone/i.test(k));
       const emailKey = keys.find(k => /mail/i.test(k));
       const addressKey = keys.find(k => /adresse|postal/i.test(k));
-      const checkInKey = keys.find(k => /début|debut|check-in|checkin|arrivée|arrivee/i.test(k));
-      const checkOutKey = keys.find(k => /fin|check-out|checkout|départ|depart/i.test(k));
-      const amountKey = keys.find(k => /montant|prix|total|loyer/i.test(k));
+      const checkInKey = keys.find(k => /début|debut|check-in|checkin|arrivée|arrivee/i.test(k) && !/paiement|solde/i.test(k));
+      const checkOutKey = keys.find(k => /fin|check-out|checkout|départ|depart/i.test(k) && !/paiement|solde/i.test(k));
+      const amountKey = keys.find(k => /montant|prix|total|loyer/i.test(k) && !/caution|acompte|garantie|paiement/i.test(k));
       const adultKey = keys.find(k => /adulte/i.test(k));
       const childKey = keys.find(k => /enfant/i.test(k));
 

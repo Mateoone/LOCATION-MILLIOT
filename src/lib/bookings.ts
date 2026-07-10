@@ -28,14 +28,21 @@ export const LOCATION_LABELS: Record<SheetLocation, string> = {
 };
 
 // Détection des colonnes du Sheet — mêmes heuristiques que les autres vues.
+// Détection robuste : les regex larges provoquaient des décalages de colonnes
+// (« Nombre de personnes » matché comme nom, « Montant caution » comme prix,
+// « Date de paiement » comme date d'arrivée…). Chaque champ exclut donc
+// explicitement les colonnes voisines qui pourraient le parasiter.
 export function detectHeaders(headers: string[]): DetectedHeaders {
+  const horsPaiement = (h: string) => !/paiement|solde|caution|acompte|signature/i.test(h);
   return {
     startHeader:
-      headers.find(h => /début|debut|arrivée|arrivee|start/i.test(h)) ||
-      headers.find(h => /date/i.test(h)),
-    endHeader: headers.find(h => /fin|départ|depart|end/i.test(h)),
-    nameHeader: headers.find(h => /nom|locataire|client|name/i.test(h)) || headers[0],
-    priceHeader: headers.find(h => /prix|loyer|total|montant|tarif/i.test(h)),
+      headers.find(h => /début|debut|arrivée|arrivee|check.?in|start/i.test(h) && horsPaiement(h)) ||
+      headers.find(h => /date/i.test(h) && horsPaiement(h)),
+    endHeader: headers.find(h => /fin|départ|depart|check.?out|end/i.test(h) && horsPaiement(h)),
+    nameHeader:
+      headers.find(h => /nom|locataire|client|voyageur|name/i.test(h) && !/nombre|nb |tél|tel|phone|mail|adresse/i.test(h)) ||
+      headers[0],
+    priceHeader: headers.find(h => /prix|loyer|total|montant|tarif/i.test(h) && !/caution|acompte|garantie|paiement/i.test(h)),
     sourceHeader: headers.find(h => /source|plateforme|origine/i.test(h)),
   };
 }

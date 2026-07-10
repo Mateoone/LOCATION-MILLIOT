@@ -195,11 +195,11 @@ function ecrireDansSheet_(infos) {
 
   const entetes = feuille.getRange(1, 1, 1, feuille.getLastColumn()).getValues()[0].map(String);
   const idx = (re) => entetes.findIndex(h => re.test(h));
-  const iDebut = idx(/début|debut|arrivée|arrivee|start|date/i);
-  const iFin = idx(/fin|départ|depart|end/i);
-  const iNom = idx(/nom|locataire|client|name/i);
+  const iDebut = idx(/^(?!.*(paiement|solde)).*(début|debut|arrivée|arrivee|start|date)/i);
+  const iFin = idx(/^(?!.*(paiement|solde)).*(fin|départ|depart|end)/i);
+  const iNom = idx(/^(?!.*(nombre|nb |tel|tél|mail|adresse)).*(nom|locataire|client|name)/i);
   const iSource = idx(/source|plateforme|origine/i);
-  const iMontant = idx(/prix|loyer|total|montant|tarif/i);
+  const iMontant = idx(/^(?!.*(caution|acompte|garantie|paiement)).*(prix|loyer|total|montant|tarif)/i);
   const iVoyageurs = idx(/voyageur|personne|pax|adulte/i);
 
   // Anti-doublon : code de confirmation déjà présent quelque part dans l'onglet

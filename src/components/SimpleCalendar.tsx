@@ -5,6 +5,7 @@ import { fr } from 'date-fns/locale';
 import { ChevronDown, ChevronRight, Euro, Moon, Link, Plus, Loader2 } from 'lucide-react';
 import { IcalEvent } from '../lib/ical';
 import { addEventToGoogleCalendar } from '../lib/calendarApi';
+import { detectHeaders } from '../lib/bookings';
 
 interface CalendarProps {
   data: SheetData;
@@ -21,26 +22,11 @@ export function SimpleCalendar({ data, location, externalEvents, loadingExternal
   const [syncing, setSyncing] = useState(false);
   const [pushing, setPushing] = useState(false);
 
-  const startHeader = useMemo(() => {
-    return data.headers.find(h => /début|debut|arrivée|arrivee|start/i.test(h)) || 
-           data.headers.find(h => /date/i.test(h));
-  }, [data.headers]);
-
-  const endHeader = useMemo(() => {
-    return data.headers.find(h => /fin|départ|depart|end/i.test(h));
-  }, [data.headers]);
-
-  const nameHeader = useMemo(() => {
-    return data.headers.find(h => /nom|locataire|client|name/i.test(h)) || data.headers[0];
-  }, [data.headers]);
-
-  const priceHeader = useMemo(() => {
-    return data.headers.find(h => /prix|loyer|total|montant|tarif/i.test(h));
-  }, [data.headers]);
-
-  const sourceHeader = useMemo(() => {
-    return data.headers.find(h => /source|plateforme|origine/i.test(h));
-  }, [data.headers]);
+  // Détection commune et durcie des colonnes (lib/bookings.ts).
+  const { startHeader, endHeader, nameHeader, priceHeader, sourceHeader } = useMemo(
+    () => detectHeaders(data.headers),
+    [data.headers]
+  );
 
   const parseDateStr = (dateStr: string) => {
     if (!dateStr) return null;
@@ -168,7 +154,7 @@ export function SimpleCalendar({ data, location, externalEvents, loadingExternal
       if (prIdx !== -1) newRow[prIdx] = "";
       if (srcIdx !== -1) newRow[srcIdx] = "Airbnb Externe";
       
-      await addSheetRow(location, newRow);
+      await addSheetRow(location, newRow, data.rawHeaders);
       onReload(); // Trigger generic reload for this view
     } catch (e: any) {
       alert("Erreur lors de l'ajout au tableur: " + e.message);

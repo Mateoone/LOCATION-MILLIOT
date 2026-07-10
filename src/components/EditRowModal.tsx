@@ -7,13 +7,14 @@ import { getAccessToken } from '../lib/auth';
 interface EditRowModalProps {
   row: ReservationRow;
   headers: string[];
+  rawHeaders: string[];
   location: SheetLocation;
   onClose: () => void;
   onSaved: () => void;
   onGenerateContract?: () => void;
 }
 
-export function EditRowModal({ row, headers, location, onClose, onSaved, onGenerateContract }: EditRowModalProps) {
+export function EditRowModal({ row, headers, rawHeaders, location, onClose, onSaved, onGenerateContract }: EditRowModalProps) {
   const [formData, setFormData] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     headers.forEach(h => initial[h] = row[h] || '');
@@ -75,7 +76,7 @@ export function EditRowModal({ row, headers, location, onClose, onSaved, onGener
     try {
       setSaving(true);
       setError(null);
-      await updateSheetRow(location, row.rowIndex, headers, formData);
+      await updateSheetRow(location, row.rowIndex, headers, formData, rawHeaders);
       onSaved();
     } catch (err: any) {
       setError(err.message || "Erreur lors de la sauvegarde.");
