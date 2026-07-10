@@ -59,10 +59,12 @@ export const ContractModal: React.FC<ContractModalProps> = ({ isOpen, onClose, r
       let fileEnd = 'Fin';
 
       // Basic localizing attempts if it's a parseable date. Assuming dd/MM/yyyy
+      let checkInDate: Date | null = null;
       try {
         if (checkInRaw.includes('/')) {
           const parsed = parse(checkInRaw, 'dd/MM/yyyy', new Date());
           if (isValid(parsed)) {
+            checkInDate = parsed;
             formattedDebut = `le ${format(parsed, 'EEEE dd MMMM yyyy', { locale: fr })} à partir de 16h`;
             fileStart = format(parsed, 'dd-MM-yyyy');
           }
@@ -70,12 +72,22 @@ export const ContractModal: React.FC<ContractModalProps> = ({ isOpen, onClose, r
         if (checkOutRaw.includes('/')) {
           const parsed = parse(checkOutRaw, 'dd/MM/yyyy', new Date());
           if (isValid(parsed)) {
-            formattedFin = `le ${format(parsed, 'EEEE dd MMMM yyyy', { locale: fr })} à 12h`;
+            // Chalets Haut/Bas : départ avant 10 h ; Portivy : 12 h.
+            const heureDepart = location === 'PORTIVY' ? 'à 12h' : 'avant 10h';
+            formattedFin = `le ${format(parsed, 'EEEE dd MMMM yyyy', { locale: fr })} ${heureDepart}`;
             fileEnd = format(parsed, 'dd-MM-yyyy');
           }
         }
       } catch (e) {
         // ignore format errors if not well formed
+      }
+
+      // Solde à régler 10 jours avant le début de la location (sans remonter
+      // dans le passé pour les réservations de dernière minute).
+      let paiementDefaut = addDays(new Date(), 7);
+      if (checkInDate) {
+        const dixJoursAvant = addDays(checkInDate, -10);
+        paiementDefaut = dixJoursAvant > new Date() ? dixJoursAvant : new Date();
       }
 
       setFileDates({ start: fileStart, end: fileEnd });
@@ -101,7 +113,7 @@ export const ContractModal: React.FC<ContractModalProps> = ({ isOpen, onClose, r
         acompteMontant: 900,
         nbAdultes: (adultKey ? reservation[adultKey] : '') || prev.nbAdultes,
         nbEnfants: (childKey ? reservation[childKey] : '') || prev.nbEnfants,
-        datePaiement: format(addDays(new Date(), 7), 'yyyy-MM-dd'),
+        datePaiement: format(paiementDefaut, 'yyyy-MM-dd'),
         dateSignature: format(new Date(), 'yyyy-MM-dd'),
       }));
     }

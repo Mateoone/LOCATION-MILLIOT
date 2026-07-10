@@ -166,10 +166,10 @@ export const ChaletHautContractPdf: React.FC<Props> = ({ data }) => {
           <Text style={{ marginTop: 8 }}>Le loyer comprend les charges locatives que sont les frais d’eau, de gaz et l'électricité. Les frais de ménage (obligatoires) s'élèvent à {data.menageMontant || 50} Euros.</Text>
           <Text style={{ marginTop: 8 }}>Ce paiement sera acquitté en deux fois selon les modalités décrites ci-après :</Text>
           <Text style={{ marginTop: 8, marginLeft: 10 }}>
-            - Un acompte d’un montant de <Text style={styles.bold}>{data.acompteMontant} Euros</Text> a été versé à la signature du présent contrat, ce règlement assure la réservation de la période définie à l’article 4. Le chèque est à établir à l’ordre de Madame Hélène Milliot ou par virement (RIB ci-joint).
+            - Un acompte d’un montant de <Text style={styles.bold}>{data.acompteMontant} Euros</Text> doit être versé à la signature du présent contrat, ce règlement assure la réservation de la période définie à l’article 4. Le chèque est à établir à l’ordre de Madame Hélène Milliot ou par virement (RIB ci-joint).
           </Text>
           <Text style={{ marginTop: 8, marginLeft: 10 }}>
-            - Le solde de <Text style={styles.bold}>{solde} Euros</Text> (comprenant les frais de ménage) devra être réglé le <Text style={styles.bold}>{data.datePaiement}</Text> au plus tard. Le chèque est à établir à l'ordre de Mme Hélène Milliot et envoyé à l'adresse suivante : Hélène Milliot 100 Bd Pereire 75017 PARIS ou par virement (RIB ci-joint).
+            - Le solde de <Text style={styles.bold}>{solde} Euros</Text> (comprenant les frais de ménage) devra être réglé avant le <Text style={styles.bold}>{data.datePaiement}</Text>. Le chèque est à établir à l'ordre de Mme Hélène Milliot et envoyé à l'adresse suivante : Hélène Milliot 100 Bd Pereire 75017 PARIS ou par virement (RIB ci-joint).
           </Text>
         </View>
         <View style={styles.divider} />
