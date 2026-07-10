@@ -237,7 +237,7 @@ export const PortivyContractPdf: React.FC<Props> = ({ data }) => {
           
           <View style={[styles.rowFlex, { marginTop: 12 }]}>
             <Text style={{ width: 250, fontFamily: 'Helvetica-Bold' }}>Nombre de personnes (à remplir obligatoirement)</Text>
-            <Text>{data.nbAdultes} adultes + {data.nbEnfants} enfants</Text>
+            <Text><Text style={styles.bold}>{(parseInt(String(data.nbAdultes), 10) || 0) + (parseInt(String(data.nbEnfants), 10) || 0)} personnes au total</Text> : {data.nbAdultes} adulte(s) + {data.nbEnfants} enfant(s)</Text>
           </View>
         </View>
 

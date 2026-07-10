@@ -72,9 +72,7 @@ export const ContractModal: React.FC<ContractModalProps> = ({ isOpen, onClose, r
         if (checkOutRaw.includes('/')) {
           const parsed = parse(checkOutRaw, 'dd/MM/yyyy', new Date());
           if (isValid(parsed)) {
-            // Chalets Haut/Bas : départ avant 10 h ; Portivy : 12 h.
-            const heureDepart = location === 'PORTIVY' ? 'à 12h' : 'avant 10h';
-            formattedFin = `le ${format(parsed, 'EEEE dd MMMM yyyy', { locale: fr })} ${heureDepart}`;
+            formattedFin = `le ${format(parsed, 'EEEE dd MMMM yyyy', { locale: fr })} avant 10h`;
             fileEnd = format(parsed, 'dd-MM-yyyy');
           }
         }

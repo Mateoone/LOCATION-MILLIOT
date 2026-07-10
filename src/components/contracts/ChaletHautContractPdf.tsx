@@ -175,6 +175,20 @@ export const ChaletHautContractPdf: React.FC<Props> = ({ data }) => {
         <View style={styles.divider} />
 
         <View style={styles.section}>
+          <Text style={styles.h2}>Options proposées</Text>
+          <Text style={{ marginTop: 4, marginLeft: 10 }}>
+            - A votre arrivée, un service de moto-neige vous est proposé pour monter les bagages et le matériel dans la neige : un trajet vous est offert.
+          </Text>
+          <Text style={{ marginTop: 6, marginLeft: 10 }}>
+            - A votre départ, un service de moto-neige vous est proposé pour descendre les bagages et le matériel dans la neige pour la somme de <Text style={styles.bold}>50 Euros</Text> par trajet.
+          </Text>
+          <Text style={{ marginTop: 6, marginLeft: 10 }}>
+            - Un service vous est également proposé pour récupérer vos courses au drive du SUPER U de Bourg Saint Maurice et les monter au chalet pour la somme de <Text style={styles.bold}>80 Euros</Text>.
+          </Text>
+        </View>
+        <View style={styles.divider} />
+
+        <View style={styles.section}>
           <Text style={styles.h2}>Article 6 : Dépôt de garantie</Text>
           <Text>Le locataire s'engage à déposer en garantie au propriétaire, la somme de <Text style={styles.bold}>{data.cautionMontant} euros</Text> par chèque bancaire (ou postal) établi à l'ordre du propriétaire, destinée à garantir la bonne exécution des clauses et conditions de la présente location. Ce chèque doit être envoyé par la poste en même temps que le solde de la location avant le <Text style={styles.bold}>{data.datePaiement}</Text> ou <Text style={styles.bold}>remis à la personne qui se chargera de l'accueil des locataires et la remise des clés.</Text> Ce règlement sera restitué au locataire en fin de location si aucune dégradation n'est constatée. A défaut, le solde de la caution sera envoyé au locataire une fois les dégradations réparées.</Text>
         </View>
@@ -201,7 +215,7 @@ export const ChaletHautContractPdf: React.FC<Props> = ({ data }) => {
           
           <View style={[styles.rowFlex, { marginTop: 12 }]}>
             <Text style={{ width: 250, fontFamily: 'Helvetica-Bold' }}>Nombre de personnes (à remplir obligatoirement)</Text>
-            <Text>{data.nbAdultes} adultes + {data.nbEnfants} enfants</Text>
+            <Text><Text style={styles.bold}>{(parseInt(String(data.nbAdultes), 10) || 0) + (parseInt(String(data.nbEnfants), 10) || 0)} personnes au total</Text> : {data.nbAdultes} adulte(s) + {data.nbEnfants} enfant(s)</Text>
           </View>
         </View>
 
