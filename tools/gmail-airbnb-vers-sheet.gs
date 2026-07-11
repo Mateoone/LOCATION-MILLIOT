@@ -187,6 +187,10 @@ function ligneAEcrire_(infos) {
   };
 }
 
+function normaliseNom_(s) {
+  return String(s || '').toLowerCase().replace(/\(hm[a-z0-9]{8}\)/i, '').replace(/\s+/g, ' ').trim();
+}
+
 function ecrireDansSheet_(infos) {
   const feuille = SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(infos.onglet);
   if (!feuille) throw new Error('Onglet introuvable : ' + infos.onglet);
@@ -202,28 +206,70 @@ function ecrireDansSheet_(infos) {
   const iEnfants = idx(/enfant/i);
 
   const l = ligneAEcrire_(infos);
+  const donnees = feuille.getDataRange().getValues();
+  const affiche = feuille.getDataRange().getDisplayValues();
 
-  // Anti-doublon : si le code est déjà là, on ne recrée pas la ligne mais on
-  // COMPLÈTE les cellules encore vides (utile pour enrichir a posteriori).
+  // Même réservation ? = mêmes dates affichées + nom vide ou compatible
+  // (« Joe » ⊂ « Joe Maurer (HM…) »). Deux résas distinctes aux mêmes dates
+  // auraient des noms incompatibles → jamais fusionnées.
+  const cibleNom = normaliseNom_(l.nom);
+  const memeResa = (r) => {
+    if (iDebut === -1 || iFin === -1) return false;
+    if (String(affiche[r][iDebut]).trim() !== l.debut) return false;
+    if (String(affiche[r][iFin]).trim() !== l.fin) return false;
+    const n = normaliseNom_(iNom !== -1 ? affiche[r][iNom] : '');
+    return !n || cibleNom.indexOf(n) !== -1 || n.indexOf(cibleNom) !== -1;
+  };
+
+  // 1. Ligne principale : celle qui porte déjà le code…
+  let principal = -1;
   if (infos.code) {
-    const donnees = feuille.getDataRange().getValues();
-    for (let r = 1; r < donnees.length; r++) {
-      if (donnees[r].join(' ').indexOf(infos.code) !== -1) {
-        const maj = [];
-        const compléter = (ci, val) => {
-          if (ci !== -1 && val != null && val !== '' && !String(donnees[r][ci]).trim()) {
-            feuille.getRange(r + 1, ci + 1).setValue(val); maj.push(entetes[ci]);
-          }
-        };
-        compléter(iMontant, l.montant);
-        compléter(iAdultes, l.adultes);
-        compléter(iEnfants, l.enfants);
-        Logger.log(maj.length ? '  ↻ Déjà présent (%s) — complété : %s' : '  Déjà présent (%s) — rien à compléter.', infos.code, maj.join(', '));
-        return false;
+    for (let r = 1; r < affiche.length; r++) {
+      if (affiche[r].join(' ').indexOf(infos.code) !== -1) { principal = r; break; }
+    }
+  }
+  // …sinon une ligne aux mêmes dates avec nom compatible (saisie manuelle) :
+  // on la promeut en complétant son nom avec le nom complet + code.
+  if (principal === -1) {
+    for (let r = 1; r < affiche.length; r++) {
+      if (memeResa(r)) {
+        principal = r;
+        if (iNom !== -1) feuille.getRange(r + 1, iNom + 1).setValue(l.nom);
+        break;
       }
     }
   }
 
+  if (principal !== -1) {
+    // Complète les cellules vides de la ligne principale
+    const completer = (ci, val) => {
+      if (ci !== -1 && val != null && val !== '' && !String(donnees[principal][ci]).trim()) {
+        feuille.getRange(principal + 1, ci + 1).setValue(val);
+      }
+    };
+    completer(iMontant, l.montant);
+    completer(iAdultes, l.adultes);
+    completer(iEnfants, l.enfants);
+    completer(iSource, l.source);
+
+    // Fusionne les doublons éventuels (mêmes dates, nom compatible) : copie
+    // leurs infos uniques (tél, email…) vers la principale puis supprime.
+    for (let r = affiche.length - 1; r >= 1; r--) {
+      if (r === principal || !memeResa(r)) continue;
+      for (let c2 = 0; c2 < entetes.length; c2++) {
+        if (c2 === iNom) continue;
+        if (!String(donnees[principal][c2]).trim() && String(donnees[r][c2]).trim()) {
+          feuille.getRange(principal + 1, c2 + 1).setValue(donnees[r][c2]);
+        }
+      }
+      feuille.deleteRow(r + 1);
+      Logger.log('  ♻ Doublon fusionné puis supprimé (ligne %s, %s).', r + 1, infos.onglet);
+    }
+    Logger.log('  ↻ Ligne existante à jour (%s).', infos.code || l.nom);
+    return false;
+  }
+
+  // 2. Aucune ligne correspondante → ajout
   const ligne = new Array(entetes.length).fill('');
   if (iDebut !== -1) ligne[iDebut] = l.debut;
   if (iFin !== -1) ligne[iFin] = l.fin;
