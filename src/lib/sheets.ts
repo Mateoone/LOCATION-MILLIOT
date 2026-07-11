@@ -1,5 +1,5 @@
 import { authorizedFetch } from "./auth";
-import { readCache, writeCache, notifyOffline, isNetworkError } from "./offlineCache";
+import { readCache, writeCache, notifyOffline, notifyOnline, isNetworkError } from "./offlineCache";
 
 const SPREADSHEET_ID = "1VVVMkx9Woqxvfs8u7IWWfWwxz_kJ7h4OD9s5oC4u2ts";
 
@@ -64,7 +64,10 @@ export async function fetchSheetData(location: SheetLocation): Promise<SheetData
     });
 
     if (!res.ok) {
-      throw new Error("Failed to fetch sheet data");
+      // Message SANS « fetch » : ce n'est pas une panne réseau mais une erreur
+      // applicative de l'API (droits, quota, 5xx) → ne doit pas déclencher le
+      // mode hors-ligne (cf. isNetworkError).
+      throw new Error(`Réponse inattendue de Google Sheets (HTTP ${res.status}).`);
     }
 
     const result = await res.json();
@@ -73,6 +76,7 @@ export async function fetchSheetData(location: SheetLocation): Promise<SheetData
     if (!values || values.length === 0) {
       const empty = { headers: [], rawHeaders: [], rows: [] };
       writeCache(cacheKey, empty);
+      notifyOnline();
       return empty;
     }
 
@@ -105,6 +109,7 @@ export async function fetchSheetData(location: SheetLocation): Promise<SheetData
 
     const data = { headers, rawHeaders: rawHeaders.map(h => (h || '').toString()), rows };
     writeCache(cacheKey, data); // pour un affichage hors-ligne ultérieur
+    notifyOnline();             // lecture en ligne réussie → referme le bandeau
     return data;
   } catch (err) {
     // Réseau absent : on sert la dernière version connue si on l'a.

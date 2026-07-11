@@ -10,10 +10,10 @@ import { LocationView } from './components/LocationView';
 import { ContactsView } from './components/ContactsView';
 import { OverviewDashboard } from './components/OverviewDashboard';
 import { SheetLocation } from './lib/sheets';
-import { OFFLINE_DATA_EVENT } from './lib/offlineCache';
+import { OFFLINE_DATA_EVENT, ONLINE_DATA_EVENT } from './lib/offlineCache';
 import { LogOut, Home, Sunset, FileSpreadsheet, Users, LayoutDashboard, AlertTriangle, Loader2, WifiOff } from 'lucide-react';
 
-const APP_VERSION = '2.6';
+const APP_VERSION = '2.7';
 
 type Tab = 'overview' | 'houses' | 'contacts';
 
@@ -93,11 +93,17 @@ export default function App() {
     };
   }, []);
 
-  // Données servies depuis le cache local (réseau indisponible).
+  // Données servies depuis le cache local (réseau indisponible) — et retour en
+  // ligne dès qu'une lecture réussit, pour refermer le bandeau.
   useEffect(() => {
     const onOffline = (e: Event) => setOfflineSince((e as CustomEvent).detail?.savedAt ?? Date.now());
+    const onOnline = () => setOfflineSince(null);
     window.addEventListener(OFFLINE_DATA_EVENT, onOffline);
-    return () => window.removeEventListener(OFFLINE_DATA_EVENT, onOffline);
+    window.addEventListener(ONLINE_DATA_EVENT, onOnline);
+    return () => {
+      window.removeEventListener(OFFLINE_DATA_EVENT, onOffline);
+      window.removeEventListener(ONLINE_DATA_EVENT, onOnline);
+    };
   }, []);
 
   if (loading) {

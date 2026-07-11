@@ -2,6 +2,7 @@
 // exploitable quand le réseau est absent (au chalet, connexion capricieuse).
 
 export const OFFLINE_DATA_EVENT = "offline-data";
+export const ONLINE_DATA_EVENT = "online-data";
 
 interface CacheEntry<T> {
   savedAt: number;
@@ -35,10 +36,16 @@ export function notifyOffline(savedAt: number): void {
   window.dispatchEvent(new CustomEvent(OFFLINE_DATA_EVENT, { detail: { savedAt } }));
 }
 
-// Une panne réseau fait rejeter fetch avec un TypeError ; une session expirée
-// remonte notre message dédié. On ne bascule en cache que pour le réseau.
+// Signale un chargement en ligne réussi → l'app referme le bandeau hors-ligne.
+export function notifyOnline(): void {
+  window.dispatchEvent(new CustomEvent(ONLINE_DATA_EVENT));
+}
+
+// Vraie panne réseau uniquement : fetch() rejette alors avec un TypeError, ou
+// le navigateur se déclare hors-ligne. On NE bascule PAS en cache pour une
+// erreur applicative de l'API (HTTP 4xx/5xx, session expirée) — sinon un
+// simple hoquet Google afficherait à tort « Mode hors-ligne ».
 export function isNetworkError(err: unknown): boolean {
-  if (err instanceof TypeError) return true;
-  const msg = err instanceof Error ? err.message : String(err);
-  return /Session Google expirée/.test(msg) ? false : /network|fetch|Failed to fetch/i.test(msg);
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  return err instanceof TypeError;
 }
