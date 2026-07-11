@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { ReservationRow, SheetLocation, updateSheetRow } from '../lib/sheets';
 import { X, Loader2, Mail, Phone, FileText } from 'lucide-react';
 import { fetchGoogleContacts, GoogleContact } from '../lib/contacts';
-import { getAccessToken } from '../lib/auth';
 
 interface EditRowModalProps {
   row: ReservationRow;

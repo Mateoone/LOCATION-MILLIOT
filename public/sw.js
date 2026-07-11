@@ -1,7 +1,7 @@
 // Service Worker — cache de l'app shell pour un fonctionnement hors-ligne.
 // Les données (Sheets/Agenda) ne sont jamais mises en cache ici : elles
 // passent par des API authentifiées et sont gérées côté app (offlineCache).
-const CACHE_NAME = 'gestion-location-v2';
+const CACHE_NAME = 'gestion-location-v3';
 
 // Pré-cache minimal ; les assets hashés (index-*.js/css) sont ajoutés au vol.
 const CORE_ASSETS = ['/', '/index.html', '/manifest.json', '/icon.svg'];
@@ -27,9 +27,12 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
 
-  // On ne gère que les ressources de l'app (même origine). Les appels aux API
-  // Google passent directement au réseau.
+  // On ne gère que les ressources de l'app (même origine). Les appels /api/*
+  // (proxy Google du serveur) passent directement au réseau : les mettre en
+  // cache ici servirait des données périmées (le cache de données vit dans
+  // offlineCache, côté app).
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/api/')) return;
 
   // Navigations : réseau d'abord, repli sur l'app shell en cache hors-ligne.
   if (req.mode === 'navigate') {

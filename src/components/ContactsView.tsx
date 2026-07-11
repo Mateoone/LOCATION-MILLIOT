@@ -7,7 +7,6 @@ import {
   deleteGoogleContact,
   GoogleContact 
 } from '../lib/contacts';
-import { getAccessToken } from '../lib/auth';
 import { SheetLocation, fetchSheetData, ReservationRow } from '../lib/sheets';
 import { parse, isValid, compareDesc } from 'date-fns';
 import { 
@@ -265,10 +264,6 @@ export function ContactsView() {
       const currentGoogleContacts = await fetchGoogleContacts();
 
       setSyncStep("Étape 3: Extraction et traitement des réservations depuis Sheets...");
-      const token = await getAccessToken();
-      if (!token) {
-        throw new Error("Token d'authentification absent. Veuillez vous reconnecter.");
-      }
       const locations: SheetLocation[] = ['HAUT', 'BAS', 'PORTIVY'];
       
       let rawBookingRowsCount = 0;

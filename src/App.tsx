@@ -13,7 +13,7 @@ import { SheetLocation } from './lib/sheets';
 import { OFFLINE_DATA_EVENT, ONLINE_DATA_EVENT } from './lib/offlineCache';
 import { LogOut, Home, Sunset, FileSpreadsheet, Users, LayoutDashboard, AlertTriangle, Loader2, WifiOff } from 'lucide-react';
 
-const APP_VERSION = '2.9';
+const APP_VERSION = '3.0';
 
 type Tab = 'overview' | 'houses' | 'contacts';
 
@@ -36,9 +36,9 @@ function ReconnectOverlay() {
           <AlertTriangle className="w-6 h-6" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-white">Connexion Google à renouveler</h2>
+          <h2 className="text-lg font-bold text-white">Session à renouveler</h2>
           <p className="text-sm text-slate-400 mt-1">
-            Reconnectez-vous pour continuer — vous resterez sur la même page. Sur l'écran Google, <span className="text-slate-200 font-medium">acceptez bien l'accès à Google Sheets, Agenda et Contacts</span>.
+            Votre session a expiré. Reconnectez-vous pour continuer — vous resterez sur la même page, un simple choix de compte suffit.
           </p>
         </div>
         {failed && (
@@ -80,7 +80,8 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Token OAuth expiré : on garde l'app montée et on affiche une bannière de
+  // Session Firebase irrécupérable (cas rare : compte désactivé, déconnexion
+  // ailleurs…) : on garde l'app montée et on affiche une bannière de
   // reconnexion en place (le popup Google exige un clic utilisateur).
   useEffect(() => {
     const onExpired = () => setSessionExpired(true);

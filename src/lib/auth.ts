@@ -8,114 +8,52 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
+// v3.0 : l'app ne demande plus AUCUN scope Google. Les API Sheets/Agenda sont
+// appelées par le serveur (compte de service) via /api/google/* — le
+// navigateur ne détient plus de token OAuth utilisateur. La connexion se
+// résume au choix du compte Google (plus d'écran de consentement) et la
+// session Firebase persiste ensuite pendant des mois, rafraîchie en silence.
 const provider = new GoogleAuthProvider();
-provider.addScope("https://www.googleapis.com/auth/spreadsheets");
-provider.addScope("https://www.googleapis.com/auth/calendar.events");
-provider.addScope("https://www.googleapis.com/auth/calendar");
-provider.addScope("https://www.googleapis.com/auth/contacts");
-// Force l'écran de consentement à chaque connexion : garantit que les scopes
-// Sheets/Agenda/Contacts sont bien redemandés (sinon Google peut renvoyer un
-// token limité aux scopes de base → 403 « insufficient authentication scopes »).
-provider.setCustomParameters({ prompt: "consent" });
 
-const TOKEN_KEY = "google_access_token";
-const TOKEN_EXPIRY_KEY = "google_access_token_expiry";
-
-let isSigningIn = false;
-let cachedAccessToken: string | null = null;
+// Nettoyage des tokens OAuth stockés par les versions ≤ 2.9.
+localStorage.removeItem("google_access_token");
+localStorage.removeItem("google_access_token_expiry");
 
 export const initAuth = (
-  onAuthSuccess?: (user: User, token: string) => void,
+  onAuthSuccess?: (user: User) => void,
   onAuthFailure?: () => void
 ) => {
-  return onAuthStateChanged(auth, async (user: User | null) => {
+  return onAuthStateChanged(auth, (user: User | null) => {
     if (user) {
-      // Check for valid stored token
-      const storedToken = localStorage.getItem(TOKEN_KEY);
-      const storedExpiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
-      
-      if (storedToken && storedExpiry && Number(storedExpiry) > Date.now()) {
-        cachedAccessToken = storedToken;
-      }
-
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-      } else if (!isSigningIn) {
-        cachedAccessToken = null;
-        if (onAuthFailure) onAuthFailure();
-      }
+      sessionExpired = false;
+      onAuthSuccess?.(user);
     } else {
-      cachedAccessToken = null;
-      if (onAuthFailure) onAuthFailure();
+      onAuthFailure?.();
     }
   });
 };
 
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
-  try {
-    isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error("Failed to get access token from Firebase Auth");
-    }
-
-    cachedAccessToken = credential.accessToken;
-    localStorage.setItem(TOKEN_KEY, cachedAccessToken);
-    localStorage.setItem(TOKEN_EXPIRY_KEY, (Date.now() + 3500 * 1000).toString()); // 1 hour minus a bit for safety
-
-    return { user: result.user, accessToken: cachedAccessToken };
-  } catch (error: any) {
-    console.error("Sign in error:", error);
-    throw error;
-  } finally {
-    isSigningIn = false;
-  }
+export const googleSignIn = async (): Promise<User> => {
+  const result = await signInWithPopup(auth, provider);
+  return result.user;
 };
 
-export const getAccessToken = async (): Promise<string | null> => {
-  const storedExpiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
-  if (!storedExpiry || Number(storedExpiry) <= Date.now()) {
-    clearStoredToken();
-    return null;
-  }
-
-  if (cachedAccessToken) return cachedAccessToken;
-
-  const storedToken = localStorage.getItem(TOKEN_KEY);
-  if (storedToken) {
-    cachedAccessToken = storedToken;
-    return storedToken;
-  }
-  return null;
-};
-
-// Le token OAuth Google expire au bout d'une heure et ne peut pas être
-// renouvelé sans popup côté navigateur (GIS a supprimé le refresh iframe,
-// et ces scopes n'ont pas de refresh-token exploitable sans backend).
-// À l'expiration on prévient App.tsx, qui affiche une bannière de
-// reconnexion en place (sans démonter l'app), puis AUTH_RESTORED_EVENT est
-// émis après un nouveau login réussi pour que les vues rechargent.
+// La session Firebase se rafraîchit toute seule ; ces événements ne servent
+// plus que pour les cas rares où elle devient irrécupérable (compte
+// désactivé, déconnexion dans un autre onglet…).
 export const AUTH_EXPIRED_EVENT = "auth-expired";
 export const AUTH_RESTORED_EVENT = "auth-restored";
-
-const clearStoredToken = () => {
-  cachedAccessToken = null;
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(TOKEN_EXPIRY_KEY);
-};
 
 let sessionExpired = false;
 
 const notifyAuthExpired = () => {
-  clearStoredToken();
   if (sessionExpired) return; // évite les bannières multiples si plusieurs requêtes échouent
   sessionExpired = true;
   window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
 };
 
 // Rouvre le popup Google (déclenché par un clic sur la bannière) pour
-// récupérer un token frais tout en gardant l'app montée.
+// rétablir la session tout en gardant l'app montée.
 export const reconnect = async (): Promise<boolean> => {
   try {
     await googleSignIn();
@@ -128,40 +66,43 @@ export const reconnect = async (): Promise<boolean> => {
   }
 };
 
+// Réécrit les URL Google vers le proxy du serveur (/api/google/<host>/…).
+const GOOGLE_API_HOSTS = /^https:\/\/(sheets\.googleapis\.com|www\.googleapis\.com)\//;
+
 export const authorizedFetch = async (url: string, init: RequestInit = {}): Promise<Response> => {
-  const token = await getAccessToken();
-  if (!token) {
+  const user = auth.currentUser;
+  if (!user) {
     notifyAuthExpired();
-    throw new Error("Session Google expirée. Veuillez vous reconnecter.");
+    throw new Error("Session expirée. Veuillez vous reconnecter.");
   }
 
-  const res = await fetch(url, {
+  // getIdToken() renvoie le token de session en le rafraîchissant en silence
+  // si besoin — aucun popup, contrairement à l'ancien token OAuth d'une heure.
+  let token: string;
+  try {
+    token = await user.getIdToken();
+  } catch (err: any) {
+    if (err?.code === "auth/network-request-failed") {
+      // Requalifié en panne réseau (TypeError) pour que les vues basculent
+      // sur le cache local (cf. offlineCache.isNetworkError).
+      throw new TypeError("Réseau indisponible pour rafraîchir la session.");
+    }
+    notifyAuthExpired();
+    throw new Error("Session expirée. Veuillez vous reconnecter.");
+  }
+
+  const res = await fetch(url.replace(GOOGLE_API_HOSTS, "/api/google/$1/"), {
     ...init,
     headers: { ...(init.headers || {}), Authorization: `Bearer ${token}` },
   });
 
   if (res.status === 401) {
     notifyAuthExpired();
-    throw new Error("Session Google expirée. Veuillez vous reconnecter.");
-  }
-
-  // 403 « insufficient authentication scopes » : le token ne couvre pas
-  // Sheets/Agenda/Contacts (connexion sans accepter toutes les autorisations).
-  // On traite comme une session à renouveler → écran de reconnexion.
-  if (res.status === 403) {
-    let body = "";
-    try { body = await res.clone().text(); } catch { /* ignore */ }
-    if (/insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|PERMISSION_DENIED/i.test(body)) {
-      notifyAuthExpired();
-      throw new Error("Autorisations Google insuffisantes. Reconnectez-vous et acceptez l'accès à Google Sheets, Agenda et Contacts.");
-    }
+    throw new Error("Session expirée. Veuillez vous reconnecter.");
   }
   return res;
 };
 
 export const logout = async () => {
   await auth.signOut();
-  cachedAccessToken = null;
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(TOKEN_EXPIRY_KEY);
 };
