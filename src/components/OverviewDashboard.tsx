@@ -4,7 +4,7 @@ import { fr } from 'date-fns/locale';
 import { LogIn, LogOut, Home as HomeIcon, AlertTriangle, RefreshCw, CalendarDays } from 'lucide-react';
 import { SheetLocation, fetchSheetData } from '../lib/sheets';
 import { fetchExternalCalendar } from '../lib/ical';
-import { buildBookings, findConflicts, UnifiedBooking, BookingConflict, LOCATION_LABELS } from '../lib/bookings';
+import { buildBookings, findConflicts, UnifiedBooking, BookingConflict, LOCATION_LABELS, LOCATION_DOT, sourceDot } from '../lib/bookings';
 import { AUTH_RESTORED_EVENT } from '../lib/auth';
 
 const LOCATIONS: SheetLocation[] = ['HAUT', 'BAS', 'PORTIVY'];
@@ -13,12 +13,6 @@ const HORIZON_DAYS = 14;
 interface OverviewDashboardProps {
   onOpenLocation: (loc: SheetLocation) => void;
 }
-
-const locationDot: Record<SheetLocation, string> = {
-  HAUT: 'bg-indigo-400',
-  BAS: 'bg-emerald-400',
-  PORTIVY: 'bg-amber-400',
-};
 
 export function OverviewDashboard({ onOpenLocation }: OverviewDashboardProps) {
   const [bookings, setBookings] = useState<UnifiedBooking[]>([]);
@@ -107,10 +101,14 @@ export function OverviewDashboard({ onOpenLocation }: OverviewDashboardProps) {
         className="w-full flex items-center justify-between gap-3 p-3 rounded-lg border border-slate-800 bg-slate-900/40 hover:bg-slate-900 hover:border-slate-700 transition-colors text-left"
       >
         <div className="flex items-center gap-3 min-w-0">
-          <span className={`w-2 h-2 rounded-full shrink-0 ${locationDot[b.location]}`} />
+          <span className={`w-2 h-2 rounded-full shrink-0 ${LOCATION_DOT[b.location]}`} />
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-200 truncate">{b.title}</p>
-            <p className="text-[11px] text-slate-500">{LOCATION_LABELS[b.location]} · {b.source}</p>
+            <p className="text-[11px] text-slate-500 flex items-center gap-1.5">
+              <span className="truncate">{LOCATION_LABELS[b.location]}</span>
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sourceDot(b)}`} />
+              <span className="shrink-0">{b.source}</span>
+            </p>
           </div>
         </div>
         <div className="text-right shrink-0">

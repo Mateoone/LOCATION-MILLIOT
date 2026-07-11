@@ -10,10 +10,11 @@ import { LocationView } from './components/LocationView';
 import { ContactsView } from './components/ContactsView';
 import { OverviewDashboard } from './components/OverviewDashboard';
 import { SheetLocation } from './lib/sheets';
+import { LOCATION_DOT } from './lib/bookings';
 import { OFFLINE_DATA_EVENT, ONLINE_DATA_EVENT } from './lib/offlineCache';
 import { LogOut, Home, Sunset, FileSpreadsheet, Users, LayoutDashboard, AlertTriangle, Loader2, WifiOff } from 'lucide-react';
 
-const APP_VERSION = '3.0';
+const APP_VERSION = '3.1';
 
 type Tab = 'overview' | 'houses' | 'contacts';
 
@@ -119,10 +120,13 @@ export default function App() {
     return <LoginScreen onLogin={() => setIsAuthenticated(true)} />;
   }
 
-  const locations: { id: SheetLocation, label: string, icon: any }[] = [
-    { id: 'HAUT', label: 'Chalet Haut', icon: Home },
-    { id: 'BAS', label: 'Chalet Bas', icon: Home },
-    { id: 'PORTIVY', label: 'Portivy', icon: Sunset },
+  // Couleur par maison (pastille + état actif), alignée sur LOCATION_DOT de
+  // la vue d'ensemble — classes Tailwind écrites en toutes lettres pour
+  // rester détectables à la compilation.
+  const locations: { id: SheetLocation, label: string, icon: any, dot: string, activeBg: string, activeText: string }[] = [
+    { id: 'HAUT', label: 'Chalet Haut', icon: Home, dot: LOCATION_DOT.HAUT, activeBg: 'bg-indigo-600/20', activeText: 'text-indigo-400' },
+    { id: 'BAS', label: 'Chalet Bas', icon: Home, dot: LOCATION_DOT.BAS, activeBg: 'bg-emerald-600/20', activeText: 'text-emerald-400' },
+    { id: 'PORTIVY', label: 'Portivy', icon: Sunset, dot: LOCATION_DOT.PORTIVY, activeBg: 'bg-amber-600/20', activeText: 'text-amber-400' },
   ];
 
   return (
@@ -165,12 +169,13 @@ export default function App() {
                 }}
                 className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors font-medium text-sm cursor-pointer
                   ${isActive
-                    ? 'bg-indigo-600/20 text-indigo-400'
+                    ? `${loc.activeBg} ${loc.activeText}`
                     : 'text-slate-500 hover:bg-slate-900/50 hover:text-slate-300'
                   }`}
               >
-                <Icon className={`w-5 h-5 ${isActive ? 'text-indigo-400' : 'text-slate-500'}`} />
+                <Icon className={`w-5 h-5 ${isActive ? loc.activeText : 'text-slate-500'}`} />
                 <span>{loc.label}</span>
+                <span className={`!ml-auto w-2 h-2 rounded-full shrink-0 ${loc.dot}`} />
               </button>
             );
           })}

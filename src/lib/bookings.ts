@@ -27,6 +27,25 @@ export const LOCATION_LABELS: Record<SheetLocation, string> = {
   PORTIVY: 'Portivy',
 };
 
+// Pastille de couleur par maison — partagée entre la sidebar et la vue
+// d'ensemble (HAUT mauve, BAS vert, PORTIVY jaune).
+export const LOCATION_DOT: Record<SheetLocation, string> = {
+  HAUT: 'bg-indigo-400',
+  BAS: 'bg-emerald-400',
+  PORTIVY: 'bg-amber-400',
+};
+
+// Pastille par origine de réservation — mêmes couleurs que les barres du
+// calendrier annuel (AnnualCalendar) : famille violet, Airbnb rose, Booking
+// bleu ciel, Direct émeraude, autres sources (Agenda…) indigo.
+export function sourceDot(b: UnifiedBooking): string {
+  if (/milliot/i.test(b.title)) return 'bg-purple-400';
+  if (/airbnb/i.test(b.source)) return 'bg-rose-400';
+  if (/booking/i.test(b.source)) return 'bg-sky-400';
+  if (b.source === 'Direct') return 'bg-emerald-400';
+  return 'bg-indigo-400';
+}
+
 // Détection des colonnes du Sheet — mêmes heuristiques que les autres vues.
 // Détection robuste : les regex larges provoquaient des décalages de colonnes
 // (« Nombre de personnes » matché comme nom, « Montant caution » comme prix,
