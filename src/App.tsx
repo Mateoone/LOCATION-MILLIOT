@@ -13,7 +13,7 @@ import { SheetLocation } from './lib/sheets';
 import { OFFLINE_DATA_EVENT, ONLINE_DATA_EVENT } from './lib/offlineCache';
 import { LogOut, Home, Sunset, FileSpreadsheet, Users, LayoutDashboard, AlertTriangle, Loader2, WifiOff } from 'lucide-react';
 
-const APP_VERSION = '2.7';
+const APP_VERSION = '2.8';
 
 type Tab = 'overview' | 'houses' | 'contacts';
 
@@ -36,9 +36,9 @@ function ReconnectOverlay() {
           <AlertTriangle className="w-6 h-6" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-white">Session Google expirée</h2>
+          <h2 className="text-lg font-bold text-white">Connexion Google à renouveler</h2>
           <p className="text-sm text-slate-400 mt-1">
-            La connexion Google se renouvelle après une heure. Reconnectez-vous pour continuer — vous resterez sur la même page.
+            Reconnectez-vous pour continuer — vous resterez sur la même page. Sur l'écran Google, <span className="text-slate-200 font-medium">acceptez bien l'accès à Google Sheets, Agenda et Contacts</span>.
           </p>
         </div>
         {failed && (

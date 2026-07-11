@@ -13,6 +13,10 @@ provider.addScope("https://www.googleapis.com/auth/spreadsheets");
 provider.addScope("https://www.googleapis.com/auth/calendar.events");
 provider.addScope("https://www.googleapis.com/auth/calendar");
 provider.addScope("https://www.googleapis.com/auth/contacts");
+// Force l'écran de consentement à chaque connexion : garantit que les scopes
+// Sheets/Agenda/Contacts sont bien redemandés (sinon Google peut renvoyer un
+// token limité aux scopes de base → 403 « insufficient authentication scopes »).
+provider.setCustomParameters({ prompt: "consent" });
 
 const TOKEN_KEY = "google_access_token";
 const TOKEN_EXPIRY_KEY = "google_access_token_expiry";
@@ -139,6 +143,18 @@ export const authorizedFetch = async (url: string, init: RequestInit = {}): Prom
   if (res.status === 401) {
     notifyAuthExpired();
     throw new Error("Session Google expirée. Veuillez vous reconnecter.");
+  }
+
+  // 403 « insufficient authentication scopes » : le token ne couvre pas
+  // Sheets/Agenda/Contacts (connexion sans accepter toutes les autorisations).
+  // On traite comme une session à renouveler → écran de reconnexion.
+  if (res.status === 403) {
+    let body = "";
+    try { body = await res.clone().text(); } catch { /* ignore */ }
+    if (/insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|PERMISSION_DENIED/i.test(body)) {
+      notifyAuthExpired();
+      throw new Error("Autorisations Google insuffisantes. Reconnectez-vous et acceptez l'accès à Google Sheets, Agenda et Contacts.");
+    }
   }
   return res;
 };
