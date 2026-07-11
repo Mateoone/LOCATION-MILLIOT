@@ -13,7 +13,7 @@ import { SheetLocation } from './lib/sheets';
 import { OFFLINE_DATA_EVENT, ONLINE_DATA_EVENT } from './lib/offlineCache';
 import { LogOut, Home, Sunset, FileSpreadsheet, Users, LayoutDashboard, AlertTriangle, Loader2, WifiOff } from 'lucide-react';
 
-const APP_VERSION = '2.8';
+const APP_VERSION = '2.9';
 
 type Tab = 'overview' | 'houses' | 'contacts';
 

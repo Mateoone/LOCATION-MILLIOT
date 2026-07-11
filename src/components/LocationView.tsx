@@ -78,34 +78,39 @@ export function LocationView({ location }: { location: SheetLocation }) {
   const [sources, setSources] = useState<CalendarSourceStatus[]>([]);
   const [loadingExternal, setLoadingExternal] = useState(false);
 
-  // Fetch Airbnb/Google calendar events (and per-source status) when the
-  // active location changes, and again after a session reconnect.
-  useEffect(() => {
-    let isMounted = true;
-    async function loadIcal() {
-      try {
-        setLoadingExternal(true);
-        const { events, sources } = await fetchCalendarsWithStatus(location);
-        if (isMounted) {
-          setExternalEvents(events);
-          setSources(sources);
-        }
-      } catch (err) {
-        console.warn("Failed to load external calendar:", err);
-        if (isMounted) setSources([]);
-      } finally {
-        if (isMounted) {
-          setLoadingExternal(false);
-        }
-      }
+  const [syncedAt, setSyncedAt] = useState<Date | null>(null);
+
+  // Fetch Airbnb/Google calendar events (and per-source status). Réutilisé par
+  // le clic sur les capsules de statut pour relancer une synchro à la demande.
+  const loadIcal = React.useCallback(async () => {
+    try {
+      setLoadingExternal(true);
+      const { events, sources } = await fetchCalendarsWithStatus(location);
+      setExternalEvents(events);
+      setSources(sources);
+      setSyncedAt(new Date());
+    } catch (err) {
+      console.warn("Failed to load external calendar:", err);
+      setSources([]);
+    } finally {
+      setLoadingExternal(false);
     }
+  }, [location]);
+
+  useEffect(() => {
     loadIcal();
     window.addEventListener(AUTH_RESTORED_EVENT, loadIcal);
     return () => {
-      isMounted = false;
       window.removeEventListener(AUTH_RESTORED_EVENT, loadIcal);
     };
-  }, [location]);
+  }, [loadIcal]);
+
+  // Resynchronisation complète (agendas + tableau) au clic sur une capsule.
+  const syncNow = () => {
+    if (loadingExternal) return;
+    loadIcal();
+    loadData();
+  };
 
   const loadData = async () => {
     try {
@@ -311,24 +316,40 @@ export function LocationView({ location }: { location: SheetLocation }) {
             {loadingExternal ? (
               <div className="flex items-center gap-1.5 bg-slate-800/60 text-slate-400 text-xs px-2.5 py-1 rounded-full border border-slate-700 font-medium whitespace-nowrap">
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                <span>Vérification…</span>
+                <span>Synchronisation…</span>
               </div>
             ) : (
-              sources.map(s => (
-                <div
-                  key={s.label}
-                  title={s.ok ? `${s.count} événement(s) · maj ${timeAgo(s.updated)}` : 'Agenda inaccessible avec ce compte'}
-                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium whitespace-nowrap ${
-                    s.ok
-                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                      : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                  }`}
+              <>
+                {/* Fraîcheur réelle de la synchro (heure du dernier fetch) — cliquer pour resynchroniser */}
+                <button
+                  onClick={syncNow}
+                  title="Relancer la synchronisation (agendas + tableau)"
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium whitespace-nowrap bg-slate-800/60 text-slate-300 border-slate-700 hover:bg-slate-700/60 hover:text-white transition-colors cursor-pointer"
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full ${s.ok ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-                  <span>{s.label}</span>
-                  {s.ok && <span className="text-emerald-500/70 font-normal">· {timeAgo(s.updated)}</span>}
-                </div>
-              ))
+                  <RefreshCw className="w-3 h-3" />
+                  <span>synchro {timeAgo(syncedAt)}</span>
+                </button>
+                {sources.map(s => (
+                  <button
+                    key={s.label}
+                    onClick={syncNow}
+                    title={
+                      s.ok
+                        ? `${s.count} événement(s) · dernier changement dans cet agenda ${timeAgo(s.updated)} · cliquer pour resynchroniser`
+                        : 'Agenda inaccessible avec ce compte · cliquer pour réessayer'
+                    }
+                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-medium whitespace-nowrap transition-colors cursor-pointer ${
+                      s.ok
+                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                        : 'bg-rose-500/10 text-rose-400 border-rose-500/20 hover:bg-rose-500/20'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${s.ok ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                    <span>{s.label}</span>
+                    {s.ok && <span className="text-emerald-500/70 font-normal">· {s.count}</span>}
+                  </button>
+                ))}
+              </>
             )}
           </div>
           <div className="flex items-center gap-3 mt-1">
