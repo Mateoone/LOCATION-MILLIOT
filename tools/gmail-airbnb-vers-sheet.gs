@@ -3,44 +3,37 @@
  * ------------------------------------------------------------------
  * À installer sur le compte Gmail qui reçoit les emails Airbnb
  * (matthieu.milliot@gmail.com) via https://script.google.com :
- *   1. Nouveau projet → coller ce fichier → 💾 Enregistrer.
- *   2. Menu déroulant des fonctions → « testerSurDerniersEmails » → Exécuter
- *      → autoriser le script (Gmail lecture + Sheets écriture)
- *      → regarder le journal (Ctrl+Entrée) : il montre ce qui SERAIT écrit,
- *        sans rien modifier. Ajuster CONFIG si besoin.
- *   3. Quand le test est bon : exécuter « installer » UNE FOIS.
- *      → crée le déclencheur (toutes les 15 min) et le libellé Gmail.
+ *   1. Coller ce fichier dans le projet → 💾 Enregistrer.
+ *   2. Sélectionner « testerSurDerniersEmails » → Exécuter → autoriser.
+ *      Le journal montre ce qui SERAIT écrit, SANS rien modifier.
+ *   3. Quand le test est bon : exécuter « installer » UNE FOIS
+ *      (déclencheur toutes les 15 min + libellé Gmail).
  *
- * Fonctionnement : à chaque passage, cherche les emails Airbnb
- * « Réservation confirmée » non encore traités, en extrait voyageur,
- * dates, montant, nombre de voyageurs et code de confirmation, ajoute la
- * ligne dans l'onglet de la bonne maison, puis pose le libellé
- * « LocationMilliot/traité » sur l'email (= ne sera jamais retraité).
- * Convention : colonne « fin » = jour du départ (comme Airbnb).
+ * Cale sur l'email Airbnb « Réservation confirmée : <voyageur> arrive le … ».
+ * Convention tableau : colonne « fin » = jour du départ (comme Airbnb).
  */
 
 const CONFIG = {
   SHEET_ID: '1VVVMkx9Woqxvfs8u7IWWfWwxz_kJ7h4OD9s5oC4u2ts',
 
-  // Mots-clés (minuscules) trouvés dans le titre de l'annonce ou le corps de
-  // l'email → onglet du Sheet. À AJUSTER avec les vrais titres des annonces
-  // si le journal de test montre « maison introuvable ».
+  // Mots-clés (minuscules) présents dans le CORPS de l'email (titre de
+  // l'annonce Airbnb) → onglet du Sheet. NB : l'annonce Portivy s'intitule
+  // « HOUSE IN PORTVY » (sans « i »). Ajouter ici le titre exact des chalets
+  // si le test affiche « maison introuvable ».
   LISTINGS: [
-    { motsCles: ['chalet haut', 'haut'], onglet: 'HAUT' },
-    { motsCles: ['chalet bas', 'bas'], onglet: 'BAS' },
-    { motsCles: ['portivy', 'quiberon', 'saint-pierre'], onglet: 'PORTIVY' },
+    { motsCles: ['chalet haut', 'haut', 'upper'], onglet: 'HAUT' },
+    { motsCles: ['chalet bas', 'bas', 'lower'], onglet: 'BAS' },
+    { motsCles: ['portivy', 'portvy', 'quiberon', 'saint-pierre'], onglet: 'PORTIVY' },
   ],
 
   LIBELLE: 'LocationMilliot/traité',
-  RECHERCHE_GMAIL: 'from:(airbnb.com) subject:("Réservation confirmée" OR "Reservation confirmed") newer_than:30d',
+  RECHERCHE_GMAIL: 'from:(airbnb.com) subject:("Réservation confirmée" OR "Reservation confirmed") newer_than:60d',
 };
 
 // ─────────────────────────────────────────────────────────── installation ──
 
 function installer() {
-  // Libellé Gmail
   GmailApp.createLabel(CONFIG.LIBELLE);
-  // Un seul déclencheur : purge les anciens puis recrée
   ScriptApp.getProjectTriggers().forEach(t => {
     if (t.getHandlerFunction() === 'traiterEmailsAirbnb') ScriptApp.deleteTrigger(t);
   });
@@ -48,123 +41,126 @@ function installer() {
   Logger.log('Installé : déclencheur toutes les 15 min + libellé "%s".', CONFIG.LIBELLE);
 }
 
+function desinstaller() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'traiterEmailsAirbnb') ScriptApp.deleteTrigger(t);
+  });
+  Logger.log('Déclencheur automatique supprimé.');
+}
+
 // ────────────────────────────────────────────────────────────── exécution ──
 
-function traiterEmailsAirbnb() {
-  executer_(false);
-}
+function traiterEmailsAirbnb() { ensureTrigger_(); executer_(false); }
 
-function testerSurDerniersEmails() {
-  executer_(true);
+// Crée le déclencheur 15 min + le libellé s'ils n'existent pas encore
+// (idempotent : appelé à chaque passage, ne duplique rien).
+function ensureTrigger_() {
+  const existe = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'traiterEmailsAirbnb');
+  if (!existe) ScriptApp.newTrigger('traiterEmailsAirbnb').timeBased().everyMinutes(15).create();
+  if (!GmailApp.getUserLabelByName(CONFIG.LIBELLE)) GmailApp.createLabel(CONFIG.LIBELLE);
 }
+function testerSurDerniersEmails() { executer_(true); }
 
 function executer_(dryRun) {
   const label = GmailApp.getUserLabelByName(CONFIG.LIBELLE) || GmailApp.createLabel(CONFIG.LIBELLE);
-  const threads = GmailApp.search(CONFIG.RECHERCHE_GMAIL + ' -label:' + CONFIG.LIBELLE.replace('/', '-'));
-  // NB : la recherche par -label utilise le nom avec tiret si Gmail l'affiche ainsi ;
-  // par sécurité on re-filtre ci-dessous sur les libellés réels du fil.
+  const threads = GmailApp.search(CONFIG.RECHERCHE_GMAIL);
   let traites = 0;
 
   threads.forEach(thread => {
     if (thread.getLabels().some(l => l.getName() === CONFIG.LIBELLE)) return;
 
+    let poseLabel = false;
     thread.getMessages().forEach(msg => {
       const sujet = msg.getSubject() || '';
       if (!/réservation confirmée|reservation confirmed/i.test(sujet)) return;
+      poseLabel = true;
 
       const infos = extraireInfos_(sujet, msg.getPlainBody() || '');
-      Logger.log('Email "%s" → %s', sujet, JSON.stringify(infos));
+      Logger.log('Email "%s" → %s', sujet, JSON.stringify(ligneAEcrire_(infos)));
 
-      if (!infos.onglet) {
-        Logger.log('⚠ Maison introuvable — ajoutez les mots-clés du titre de l\'annonce dans CONFIG.LISTINGS. Email laissé non traité.');
-        return;
-      }
-      if (!infos.arrivee || !infos.depart) {
-        Logger.log('⚠ Dates non reconnues — email laissé non traité (envoyez ce journal pour ajuster le parseur).');
-        return;
-      }
+      if (!infos.onglet) { Logger.log('  ⚠ Maison introuvable — ajouter le mot-clé du titre de l\'annonce dans CONFIG.LISTINGS.'); poseLabel = false; return; }
+      if (!infos.arrivee || !infos.depart) { Logger.log('  ⚠ Dates non reconnues — envoyer ce journal pour ajuster.'); poseLabel = false; return; }
 
-      if (dryRun) {
-        Logger.log('[TEST] Ligne qui serait ajoutée dans %s : %s', infos.onglet, JSON.stringify(ligneAEcrire_(infos)));
-        return;
-      }
-
-      ecrireDansSheet_(infos);
-      traites++;
+      if (dryRun) { Logger.log('  [TEST] rien écrit.'); return; }
+      if (ecrireDansSheet_(infos)) traites++;
     });
 
-    if (!dryRun) thread.addLabel(label);
+    if (!dryRun && poseLabel) thread.addLabel(label);
   });
 
-  Logger.log(dryRun ? 'Test terminé (aucune écriture).' : '%s réservation(s) ajoutée(s).', traites);
+  Logger.log(dryRun ? '— Test terminé (aucune écriture) —' : '%s réservation(s) ajoutée(s).', traites);
 }
 
 // ─────────────────────────────────────────────────────────────── parsing ──
+
+const MOIS_FR = { janv:0, jan:0, 'févr':1, 'fév':1, fev:1, mars:2, mar:2, avr:3, mai:4, juin:5, juil:6, jui:6, 'août':7, aou:7, sept:8, sep:8, oct:9, nov:10, 'déc':11, dec:11 };
 
 function extraireInfos_(sujet, corps) {
   const texte = sujet + '\n' + corps;
   const bas = texte.toLowerCase();
 
-  // Maison
+  // Maison (mot-clé du titre de l'annonce dans le corps)
   let onglet = null;
   for (const l of CONFIG.LISTINGS) {
     if (l.motsCles.some(m => bas.indexOf(m) !== -1)) { onglet = l.onglet; break; }
   }
 
-  // Voyageur : « Réservation confirmée : Jean Dupont arrive le … » (ou variante ‑ / pour)
+  // Voyageur : « Réservation confirmée : Joe Maurer arrive le … »
   let nom = null;
-  let m = sujet.match(/confirm[ée]e?\s*[:\-–]?\s*(.+?)\s+(?:arrive|arrives)/i);
+  let m = sujet.match(/confirm[ée]e?\s*[:\-–]\s*(.+?)\s+arrive/i);
   if (m) nom = m[1].trim();
-  if (!nom) {
-    m = corps.match(/^(.+?)\s+arrive\s+le/im);
-    if (m) nom = m[1].trim();
-  }
 
-  // Code de confirmation (HMXXXXXXXX)
+  // Code de confirmation (HM + 8)
   const code = (texte.match(/\bHM[A-Z0-9]{8}\b/) || [null])[0];
 
-  // Dates « Arrivée … / Départ … » (formats : jeu. 19 déc. 2026 / 19 décembre 2026 / 19/12/2026)
-  const arrivee = chercherDate_(corps, /arriv[ée]e/i);
-  const depart = chercherDate_(corps, /d[ée]part/i);
+  // Nombre de nuits
+  m = corps.match(/(\d+)\s+nuits?/i);
+  const nuits = m ? parseInt(m[1], 10) : null;
 
-  // Nombre de voyageurs
-  m = corps.match(/(\d+)\s+voyageurs?/i) || corps.match(/(\d+)\s+adultes?/i);
-  const voyageurs = m ? parseInt(m[1], 10) : null;
+  // Arrivée : sujet « arrive le 20 juil. » sinon corps près de « Arrivée »
+  let arrivee = chercherDateApres_(sujet, /arrive\s+le/i) || chercherDateApres_(corps, /arriv[ée]e/i);
 
-  // Montant du versement hôte (dernier montant en € après « versement » ou « vous gagnez »)
+  // Départ : arrivée + nuits (convention = jour du départ) ; sinon 2e date
+  let depart = null;
+  if (arrivee && nuits) { depart = new Date(arrivee); depart.setDate(depart.getDate() + nuits); }
+  if (!depart) depart = chercherDateApres_(corps, /d[ée]part/i);
+
+  // Le nombre de voyageurs n'est pas fiable dans cet email (le titre donne la
+  // capacité « FOR 6 PEOPLE », pas l'effectif) → on ne l'écrit pas.
+  const voyageurs = null;
+
+  // Montant net reçu par l'hôte : « VOUS GAGNEZ 1 325,50 € ». Airbnb utilise
+  // une espace insécable fine (U+202F/U+00A0) comme séparateur de milliers.
   let montant = null;
-  m = corps.match(/(?:versement|vous gagnez|revenus de l'h[ôo]te|total\s*\(EUR\))[^\d€]*([\d\s .,]+)\s*€/i);
-  if (!m) m = corps.match(/([\d\s .,]+)\s*€\s*(?:au total)?\s*$/im);
-  if (m) {
-    const brut = m[1].replace(/[\s ]/g, '').replace(',', '.');
-    const val = parseFloat(brut);
+  const gi = corps.toLowerCase().indexOf('vous gagnez');
+  const seg = gi !== -1 ? corps.substring(gi, gi + 60)
+                        : (corps.match(/versement[\s\S]{0,60}/i) || [''])[0];
+  const mm = seg.match(/([0-9][0-9.,\s  ]*)\s*€/);
+  if (mm) {
+    const val = parseFloat(mm[1].replace(/[\s  ]/g, '').replace(',', '.'));
     if (!isNaN(val)) montant = val;
   }
 
-  return { onglet, nom, code, arrivee, depart, voyageurs, montant };
+  return { onglet, nom, code, arrivee, depart, nuits, voyageurs, montant };
 }
 
-const MOIS_FR = { 'janv': 0, 'jan': 0, 'févr': 1, 'fév': 1, 'fev': 1, 'mars': 2, 'mar': 2, 'avr': 3, 'mai': 4, 'juin': 5, 'juil': 6, 'jui': 6, 'août': 7, 'aou': 7, 'sept': 8, 'sep': 8, 'oct': 9, 'nov': 10, 'déc': 11, 'dec': 11 };
-
-// Cherche une date dans les ~2 lignes qui suivent un mot-clé (Arrivée/Départ).
-function chercherDate_(corps, motCle) {
-  const idx = corps.search(motCle);
+// Cherche une date juste après un mot-clé. Gère « 20/07/2026 » et
+// « 20 juil. » / « 20 juillet 2026 » (année déduite si absente).
+function chercherDateApres_(texte, motCle) {
+  const idx = texte.search(motCle);
   if (idx === -1) return null;
-  const zone = corps.substring(idx, idx + 160);
+  const zone = texte.substring(idx, idx + 90);
 
-  // 19/12/2026
   let m = zone.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (m) return new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]));
 
-  // 19 déc. 2026 | 19 décembre 2026 | jeu. 19 déc. (année absente → déduite)
-  m = zone.match(/(\d{1,2})(?:er)?\s+([a-zéûôà]+)\.?\s*(\d{4})?/i);
+  m = zone.match(/(\d{1,2})\s+([a-zûéôàА-я]+)\.?\s*(\d{4})?/i);
   if (m) {
     const cle = Object.keys(MOIS_FR).find(k => m[2].toLowerCase().indexOf(k) === 0);
     if (cle !== undefined) {
       const mois = MOIS_FR[cle];
       let annee = m[3] ? parseInt(m[3], 10) : new Date().getFullYear();
       let d = new Date(annee, mois, parseInt(m[1], 10));
-      // Année absente et date passée de plus de 30 j → c'est l'année prochaine
       if (!m[3] && d.getTime() < Date.now() - 30 * 864e5) d = new Date(annee + 1, mois, parseInt(m[1], 10));
       return d;
     }
@@ -174,14 +170,13 @@ function chercherDate_(corps, motCle) {
 
 // ─────────────────────────────────────────────────────────────── écriture ──
 
-function formatFr_(d) {
-  return Utilities.formatDate(d, 'Europe/Paris', 'dd/MM/yyyy');
-}
+function formatFr_(d) { return Utilities.formatDate(d, 'Europe/Paris', 'dd/MM/yyyy'); }
 
 function ligneAEcrire_(infos) {
   return {
-    debut: formatFr_(infos.arrivee),
-    fin: formatFr_(infos.depart), // jour du départ, comme Airbnb
+    maison: infos.onglet,
+    debut: infos.arrivee ? formatFr_(infos.arrivee) : '?',
+    fin: infos.depart ? formatFr_(infos.depart) : '?',
     nom: (infos.nom || 'Voyageur Airbnb') + (infos.code ? ' (' + infos.code + ')' : ''),
     source: 'Airbnb',
     montant: infos.montant,
@@ -202,13 +197,10 @@ function ecrireDansSheet_(infos) {
   const iMontant = idx(/^(?!.*(caution|acompte|garantie|paiement)).*(prix|loyer|total|montant|tarif)/i);
   const iVoyageurs = idx(/voyageur|personne|pax|adulte/i);
 
-  // Anti-doublon : code de confirmation déjà présent quelque part dans l'onglet
+  // Anti-doublon : code de confirmation déjà présent dans l'onglet
   if (infos.code) {
     const tout = feuille.getDataRange().getDisplayValues().flat().join(' ');
-    if (tout.indexOf(infos.code) !== -1) {
-      Logger.log('Déjà présent (%s) — ignoré.', infos.code);
-      return;
-    }
+    if (tout.indexOf(infos.code) !== -1) { Logger.log('  Déjà présent (%s) — ignoré.', infos.code); return false; }
   }
 
   const ligne = new Array(entetes.length).fill('');
@@ -221,60 +213,16 @@ function ecrireDansSheet_(infos) {
   if (iVoyageurs !== -1 && l.voyageurs != null) ligne[iVoyageurs] = l.voyageurs;
 
   feuille.appendRow(ligne);
-  Logger.log('Ajouté dans %s : %s', infos.onglet, JSON.stringify(l));
+  Logger.log('  ✓ Ajouté dans %s.', infos.onglet);
+  return true;
 }
 
-// ═══════════════════════════════════════════════════ OUTILS DE DIAGNOSTIC ══
-// (à exécuter à la main pendant la mise au point ; aucun impact sur le Sheet)
+// ─────────────────────────────────────────────────────────── diagnostic ──
 
-// Désactive le déclencheur automatique (tant que le parsing n'est pas validé).
-function desinstaller() {
-  ScriptApp.getProjectTriggers().forEach(t => {
-    if (t.getHandlerFunction() === 'traiterEmailsAirbnb') ScriptApp.deleteTrigger(t);
-  });
-  Logger.log('Déclencheur automatique supprimé.');
-}
-
-// Liste TOUS les emails reçus d'Airbnb sur 1 an (expéditeur + sujet + date),
-// pour voir quels types d'emails existent réellement (confirmation ou non).
-function explorerBoiteAirbnb() {
-  const threads = GmailApp.search('from:(airbnb.com OR @airbnb.fr) newer_than:1y', 0, 60);
-  Logger.log('%s fils Airbnb trouvés (1 an) :', threads.length);
-  const vus = {};
-  threads.forEach(th => {
-    th.getMessages().forEach(m => {
-      const s = m.getSubject() || '(sans sujet)';
-      const cle = s.replace(/[A-ZÉ][a-zéèê]+ [A-Z]/g, 'PRENOM').substring(0, 60);
-      vus[cle] = (vus[cle] || 0) + 1;
-      Logger.log('  %s | de:%s | %s', Utilities.formatDate(m.getDate(), 'Europe/Paris', 'yyyy-MM-dd'), m.getFrom().replace(/.*<|>.*/g, ''), s);
-    });
-  });
-  Logger.log('---\nTypes de sujets (regroupés) :');
-  Object.keys(vus).sort((a, b) => vus[b] - vus[a]).forEach(k => Logger.log('  [%s×] %s', vus[k], k));
-}
-
-// Affiche le corps COMPLET du dernier email Airbnb ressemblant à une
-// confirmation de réservation → permet de vérifier/ajuster le parsing.
 function dumpDernierEmailResa() {
-  const requetes = [
-    'from:(airbnb.com) subject:("Réservation confirmée" OR "Reservation confirmed") newer_than:1y',
-    'from:(airbnb.com) subject:(confirmée OR confirmed OR réservation OR reservation OR booking) newer_than:1y',
-    'from:(airbnb.com) newer_than:1y',
-  ];
-  for (const q of requetes) {
-    const th = GmailApp.search(q, 0, 5);
-    if (th.length) {
-      const m = th[0].getMessages()[0];
-      Logger.log('=== Requête gagnante : %s', q);
-      Logger.log('SUJET : %s', m.getSubject());
-      Logger.log('DE : %s', m.getFrom());
-      Logger.log('DATE : %s', m.getDate());
-      Logger.log('--- CORPS (texte brut, 3000 premiers car.) ---');
-      Logger.log(m.getPlainBody().substring(0, 3000));
-      Logger.log('--- PARSING ACTUEL ---');
-      Logger.log(JSON.stringify(extraireInfos_(m.getSubject(), m.getPlainBody())));
-      return;
-    }
-  }
-  Logger.log('Aucun email Airbnb trouvé sur 1 an.');
+  const th = GmailApp.search('from:(airbnb.com) newer_than:2d', 0, 5);
+  if (!th.length) { Logger.log('Aucun email.'); return; }
+  const m = th[0].getMessages()[0];
+  Logger.log('SUJET: ' + m.getSubject());
+  Logger.log(m.getPlainBody().substring(0, 4000));
 }
