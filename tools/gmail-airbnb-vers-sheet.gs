@@ -67,8 +67,6 @@ function executer_(dryRun) {
   let traites = 0;
 
   threads.forEach(thread => {
-    if (thread.getLabels().some(l => l.getName() === CONFIG.LIBELLE)) return;
-
     let poseLabel = false;
     thread.getMessages().forEach(msg => {
       const sujet = msg.getSubject() || '';
@@ -125,9 +123,13 @@ function extraireInfos_(sujet, corps) {
   if (arrivee && nuits) { depart = new Date(arrivee); depart.setDate(depart.getDate() + nuits); }
   if (!depart) depart = chercherDateApres_(corps, /d[ée]part/i);
 
-  // Le nombre de voyageurs n'est pas fiable dans cet email (le titre donne la
-  // capacité « FOR 6 PEOPLE », pas l'effectif) → on ne l'écrit pas.
-  const voyageurs = null;
+  // Effectif : « Voyageurs : 2 adultes, 2 enfants » (bébés comptés en enfants).
+  // NB : ne pas confondre avec la capacité du titre (« FOR 6 PEOPLE »).
+  let a = corps.match(/(\d+)\s+adultes?/i);
+  let e = corps.match(/(\d+)\s+enfants?/i);
+  let b = corps.match(/(\d+)\s+b[ée]b[ée]s?/i);
+  const nbAdultes = a ? parseInt(a[1], 10) : null;
+  const nbEnfants = (e || b) ? (parseInt(e && e[1] || 0, 10) + parseInt(b && b[1] || 0, 10)) : null;
 
   // Montant net reçu par l'hôte : « VOUS GAGNEZ 1 325,50 € ». Airbnb utilise
   // une espace insécable fine (U+202F/U+00A0) comme séparateur de milliers.
@@ -141,7 +143,7 @@ function extraireInfos_(sujet, corps) {
     if (!isNaN(val)) montant = val;
   }
 
-  return { onglet, nom, code, arrivee, depart, nuits, voyageurs, montant };
+  return { onglet, nom, code, arrivee, depart, nuits, nbAdultes, nbEnfants, montant };
 }
 
 // Cherche une date juste après un mot-clé. Gère « 20/07/2026 » et
@@ -180,7 +182,8 @@ function ligneAEcrire_(infos) {
     nom: (infos.nom || 'Voyageur Airbnb') + (infos.code ? ' (' + infos.code + ')' : ''),
     source: 'Airbnb',
     montant: infos.montant,
-    voyageurs: infos.voyageurs,
+    adultes: infos.nbAdultes,
+    enfants: infos.nbEnfants,
   };
 }
 
@@ -195,22 +198,40 @@ function ecrireDansSheet_(infos) {
   const iNom = idx(/^(?!.*(nombre|nb |tel|tél|mail|adresse)).*(nom|locataire|client|name)/i);
   const iSource = idx(/source|plateforme|origine/i);
   const iMontant = idx(/^(?!.*(caution|acompte|garantie|paiement)).*(prix|loyer|total|montant|tarif)/i);
-  const iVoyageurs = idx(/voyageur|personne|pax|adulte/i);
+  const iAdultes = idx(/adulte/i);
+  const iEnfants = idx(/enfant/i);
 
-  // Anti-doublon : code de confirmation déjà présent dans l'onglet
+  const l = ligneAEcrire_(infos);
+
+  // Anti-doublon : si le code est déjà là, on ne recrée pas la ligne mais on
+  // COMPLÈTE les cellules encore vides (utile pour enrichir a posteriori).
   if (infos.code) {
-    const tout = feuille.getDataRange().getDisplayValues().flat().join(' ');
-    if (tout.indexOf(infos.code) !== -1) { Logger.log('  Déjà présent (%s) — ignoré.', infos.code); return false; }
+    const donnees = feuille.getDataRange().getValues();
+    for (let r = 1; r < donnees.length; r++) {
+      if (donnees[r].join(' ').indexOf(infos.code) !== -1) {
+        const maj = [];
+        const compléter = (ci, val) => {
+          if (ci !== -1 && val != null && val !== '' && !String(donnees[r][ci]).trim()) {
+            feuille.getRange(r + 1, ci + 1).setValue(val); maj.push(entetes[ci]);
+          }
+        };
+        compléter(iMontant, l.montant);
+        compléter(iAdultes, l.adultes);
+        compléter(iEnfants, l.enfants);
+        Logger.log(maj.length ? '  ↻ Déjà présent (%s) — complété : %s' : '  Déjà présent (%s) — rien à compléter.', infos.code, maj.join(', '));
+        return false;
+      }
+    }
   }
 
   const ligne = new Array(entetes.length).fill('');
-  const l = ligneAEcrire_(infos);
   if (iDebut !== -1) ligne[iDebut] = l.debut;
   if (iFin !== -1) ligne[iFin] = l.fin;
   if (iNom !== -1) ligne[iNom] = l.nom;
   if (iSource !== -1) ligne[iSource] = l.source;
   if (iMontant !== -1 && l.montant != null) ligne[iMontant] = l.montant;
-  if (iVoyageurs !== -1 && l.voyageurs != null) ligne[iVoyageurs] = l.voyageurs;
+  if (iAdultes !== -1 && l.adultes != null) ligne[iAdultes] = l.adultes;
+  if (iEnfants !== -1 && l.enfants != null) ligne[iEnfants] = l.enfants;
 
   feuille.appendRow(ligne);
   Logger.log('  ✓ Ajouté dans %s.', infos.onglet);
