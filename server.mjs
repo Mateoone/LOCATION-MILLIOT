@@ -220,6 +220,23 @@ const DIAG_CALENDARS = {
   'import-PORTIVY': AIRBNB_IMPORT_CALENDARS.PORTIVY,
 };
 
+// Rôle d'accès du compte de service sur un agenda (reader/writer/owner) +
+// nom réel de l'agenda : on l'ajoute à la calendarList du SA (idempotent,
+// invisible pour les autres comptes) puis on lit accessRole — c'est le seul
+// moyen de vérifier le niveau de partage sans tenter une écriture.
+async function calendarRole(token, id) {
+  const auth = { Authorization: `Bearer ${token}` };
+  await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+    method: 'POST',
+    headers: { ...auth, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  }).catch(() => {});
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/users/me/calendarList/${encodeURIComponent(id)}`, { headers: auth });
+  if (!res.ok) return `inaccessible (HTTP ${res.status})`;
+  const d = await res.json();
+  return `${d.accessRole} — « ${d.summary || '?'} »`;
+}
+
 app.get('/api/diag', async (_req, res) => {
   try {
     const token = await serviceAccountToken();
@@ -229,6 +246,11 @@ app.get('/api/diag', async (_req, res) => {
     const checks = { sheet: await probe(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent('HAUT!A1')}`) };
     for (const [name, id] of Object.entries(DIAG_CALENDARS)) {
       checks[name] = await probe(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(id)}/events?maxResults=1`);
+      // Le niveau de partage n'a de sens que pour les agendas maisons (writer
+      // attendu pour « Bloquer sur Airbnb ») — pas pour les imports Airbnb.
+      if (name.startsWith('agenda-google-')) {
+        checks[`role-${name.replace('agenda-google-', '')}`] = await calendarRole(token, id);
+      }
     }
     for (const [house, url] of Object.entries(AIRBNB_ICS_URLS)) {
       checks[`ics-${house}`] = url ? (await fetch(url)).status : 'non configuré (repli import Google)';
