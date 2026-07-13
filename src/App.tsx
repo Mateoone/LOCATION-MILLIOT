@@ -14,7 +14,7 @@ import { LOCATION_DOT } from './lib/bookings';
 import { OFFLINE_DATA_EVENT, ONLINE_DATA_EVENT } from './lib/offlineCache';
 import { LogOut, Home, Sunset, FileSpreadsheet, Users, LayoutDashboard, AlertTriangle, Loader2, WifiOff } from 'lucide-react';
 
-const APP_VERSION = '3.1';
+const APP_VERSION = '3.2';
 
 type Tab = 'overview' | 'houses' | 'contacts';
 

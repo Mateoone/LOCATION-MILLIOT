@@ -30,21 +30,22 @@ interface CalendarRef {
 }
 
 // Agendas lus pour chaque maison : l'agenda Google historique (celui dans
-// lequel « Bloquer sur Airbnb » écrit) + l'agenda importé depuis Airbnb
-// (Google Agenda → « Ajouter un agenda → À partir de l'URL » avec l'export
-// iCal de l'annonce Airbnb). Les doublons entre sources sont filtrés.
+// lequel « Bloquer sur Airbnb » écrit) + la source Airbnb, lue côté serveur
+// via /api/ical/<maison> (flux ICS direct de l'annonce si configuré en
+// variable d'environnement, sinon repli sur l'agenda importé Google).
+// Les doublons entre sources sont filtrés.
 const READ_CALENDARS: Record<string, CalendarRef[]> = {
   BAS: [
     { id: CALENDAR_IDS.BAS, label: "Google" },
-    { id: "0cs87obk61n9r61dv7cif9n9163vi6ab@import.calendar.google.com", label: "Airbnb" },
+    { id: "airbnb", label: "Airbnb" },
   ],
   HAUT: [
     { id: CALENDAR_IDS.HAUT, label: "Google" },
-    { id: "cvv6kpeb5pmlqni3jmrljmavsdn5deso@import.calendar.google.com", label: "Airbnb" },
+    { id: "airbnb", label: "Airbnb" },
   ],
   PORTIVY: [
     { id: CALENDAR_IDS.PORTIVY, label: "Google" },
-    { id: "2nlubhr2o5ps3n3ok5inntfnmo7gf5b7@import.calendar.google.com", label: "Airbnb" },
+    { id: "airbnb", label: "Airbnb" },
   ],
 };
 
@@ -118,6 +119,39 @@ async function fetchCalendarEvents(calendarId: string, origin: 'google' | 'airbn
   return { events, updated };
 }
 
+// Source Airbnb d'une maison, lue par le serveur (/api/ical/<maison>) :
+// événements { start, end, summary } en dates YYYY-MM-DD (fin exclusive =
+// jour du départ, comme partout). fetchedAt = lecture ICS en direct (données
+// à l'instant) ; updated = repli sur l'agenda importé Google.
+async function fetchAirbnbEvents(locationName: string): Promise<{ events: IcalEvent[]; updated: Date | null }> {
+  const res = await authorizedFetch(`/api/ical/${encodeURIComponent(locationName)}`);
+  if (!res.ok) {
+    let msg = "";
+    try { msg = (await res.json()).error || ""; } catch { /* corps non JSON */ }
+    throw new Error(msg || `Source Airbnb ${locationName} indisponible (HTTP ${res.status}).`);
+  }
+  const data = await res.json();
+
+  const events: IcalEvent[] = [];
+  for (const item of data.events || []) {
+    const start = parseEventDate({ date: item.start });
+    const end = parseEventDate({ date: item.end });
+    if (!start || !end) continue;
+    const summary = item.summary || "";
+    events.push({
+      start,
+      end,
+      summary,
+      kind: isUnavailabilityBlock(summary) ? "unavailable" : "reservation",
+      origin: "airbnb",
+    });
+  }
+
+  const stamp = data.fetchedAt || data.updated;
+  const updated = stamp ? new Date(stamp) : null;
+  return { events, updated: updated && !isNaN(updated.getTime()) ? updated : null };
+}
+
 const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 
 export async function fetchCalendarsWithStatus(
@@ -126,10 +160,12 @@ export async function fetchCalendarsWithStatus(
   const calendars = READ_CALENDARS[locationName];
   if (!calendars || calendars.length === 0) return { events: [], sources: [] };
 
-  // Chaque agenda est lu indépendamment : si l'un échoue (ex. agenda Airbnb
-  // non partagé avec le compte connecté), les autres restent affichés.
+  // Chaque source est lue indépendamment : si l'une échoue (ex. flux Airbnb
+  // indisponible), les autres restent affichées.
   const results = await Promise.allSettled(
-    calendars.map(c => fetchCalendarEvents(c.id, c.label === 'Airbnb' ? 'airbnb' : 'google'))
+    calendars.map(c =>
+      c.label === 'Airbnb' ? fetchAirbnbEvents(locationName) : fetchCalendarEvents(c.id, 'google')
+    )
   );
 
   const merged: IcalEvent[] = [];

@@ -105,16 +105,119 @@ app.use('/api/google', express.raw({ type: () => true, limit: '2mb' }), requireF
   }
 });
 
-// Diagnostic : vérifie l'accès du compte de service au Sheet et aux agendas
-// (statuts HTTP uniquement, aucune donnée — les IDs figurent déjà dans le
-// bundle client). 200 = OK, 403/404 = ressource pas encore partagée avec le SA.
+// Flux iCal Airbnb lus en direct (v3.2) : les URL contiennent un secret
+// (?s=…) et le dépôt est public → elles vivent dans les variables
+// d'environnement du service Cloud Run (ICAL_URL_BAS/HAUT/PORTIVY), jamais
+// dans le code. Avantage sur l'import Google Agenda : données à jour à
+// chaque lecture (l'import n'est rafraîchi qu'environ une fois par jour).
+const AIRBNB_ICS_URLS = {
+  BAS: process.env.ICAL_URL_BAS,
+  HAUT: process.env.ICAL_URL_HAUT,
+  PORTIVY: process.env.ICAL_URL_PORTIVY,
+};
+
+// Repli si l'URL iCal d'une maison n'est pas configurée : lecture de
+// l'agenda Google « importé À partir de l'URL » via le compte de service
+// (lisible par tout compte authentifié — l'ID encode le secret de l'URL).
+const AIRBNB_IMPORT_CALENDARS = {
+  BAS: '0cs87obk61n9r61dv7cif9n9163vi6ab@import.calendar.google.com',
+  HAUT: 'cvv6kpeb5pmlqni3jmrljmavsdn5deso@import.calendar.google.com',
+  PORTIVY: '2nlubhr2o5ps3n3ok5inntfnmo7gf5b7@import.calendar.google.com',
+};
+
+// Parseur minimal du format iCal d'Airbnb : événements journée entière
+// (DTEND exclusif = jour du départ, même convention que le Sheet), SUMMARY
+// « Reserved » ou « Airbnb (Not available) ». Les lignes longues sont
+// « pliées » (continuation par espace) → dépliage avant lecture.
+function parseAirbnbIcs(text) {
+  const lines = text.replace(/\r?\n[ \t]/g, '').split(/\r?\n/);
+  const events = [];
+  let cur = null;
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') cur = {};
+    else if (line === 'END:VEVENT') {
+      if (cur?.start && cur?.end) events.push(cur);
+      cur = null;
+    } else if (cur) {
+      let m;
+      if ((m = line.match(/^DTSTART[^:]*:(\d{4})(\d{2})(\d{2})/))) cur.start = `${m[1]}-${m[2]}-${m[3]}`;
+      else if ((m = line.match(/^DTEND[^:]*:(\d{4})(\d{2})(\d{2})/))) cur.end = `${m[1]}-${m[2]}-${m[3]}`;
+      else if ((m = line.match(/^SUMMARY[^:]*:(.*)$/))) cur.summary = m[1].trim();
+    }
+  }
+  return events;
+}
+
+// Lecture de repli d'un agenda importé, au même format de sortie que le
+// flux ICS ({ start, end, summary } en dates YYYY-MM-DD).
+async function fetchImportCalendar(calendarId) {
+  const token = await serviceAccountToken();
+  const timeMin = new Date(new Date().getFullYear() - 3, 0, 1).toISOString();
+  const events = [];
+  let updated = null;
+  let pageToken;
+  do {
+    const params = new URLSearchParams({ singleEvents: 'true', maxResults: '2500', timeMin });
+    if (pageToken) params.set('pageToken', pageToken);
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) {
+      const err = new Error(`Agenda importé inaccessible (HTTP ${res.status}).`);
+      err.status = res.status;
+      throw err;
+    }
+    const data = await res.json();
+    for (const item of data.items || []) {
+      if (item.status === 'cancelled') continue;
+      const start = item.start?.date || item.start?.dateTime?.slice(0, 10);
+      const end = item.end?.date || item.end?.dateTime?.slice(0, 10);
+      if (start && end) events.push({ start, end, summary: item.summary || '' });
+      if (item.updated && (!updated || item.updated > updated)) updated = item.updated;
+    }
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+  return { events, updated };
+}
+
+// Réservations Airbnb d'une maison : flux ICS direct si configuré, sinon
+// repli sur l'agenda importé. Réponse : { events, fetchedAt|updated, via }.
+app.get('/api/ical/:house', requireFamily, async (req, res) => {
+  const { house } = req.params;
+  if (!AIRBNB_IMPORT_CALENDARS[house]) return res.status(404).json({ error: 'Maison inconnue.' });
+  try {
+    const icsUrl = AIRBNB_ICS_URLS[house];
+    if (icsUrl) {
+      const upstream = await fetch(icsUrl);
+      if (!upstream.ok) {
+        return res.status(502).json({ error: `Le flux iCal Airbnb a répondu HTTP ${upstream.status}.` });
+      }
+      return res.json({
+        events: parseAirbnbIcs(await upstream.text()),
+        fetchedAt: new Date().toISOString(),
+        via: 'airbnb-ics',
+      });
+    }
+    const { events, updated } = await fetchImportCalendar(AIRBNB_IMPORT_CALENDARS[house]);
+    res.json({ events, updated, via: 'google-import' });
+  } catch (err) {
+    console.error(`Erreur /api/ical/${house}:`, err.message);
+    res.status(err.status === 404 ? 404 : 502).json({ error: err.message || 'Lecture Airbnb impossible.' });
+  }
+});
+
+// Diagnostic : vérifie l'accès du compte de service au Sheet et aux agendas,
+// et la réponse des flux ICS Airbnb configurés (statuts HTTP uniquement,
+// aucune donnée ni URL — les IDs figurent déjà dans le bundle client).
+// 200 = OK, 403/404 = ressource pas encore partagée avec le SA ou disparue.
 const DIAG_CALENDARS = {
   'agenda-google-BAS': 'a8bcfb8768d29e157ae40e2692de3b4722848f3af2e2d0e9dd55b6776b5f4d84@group.calendar.google.com',
   'agenda-google-HAUT': '1i5gq28cvbedqgvs7lkad892k0@group.calendar.google.com',
   'agenda-google-PORTIVY': 'vg7kplqnr05rkeqjrnnn03pt70@group.calendar.google.com',
-  'airbnb-BAS': '0cs87obk61n9r61dv7cif9n9163vi6ab@import.calendar.google.com',
-  'airbnb-HAUT': 'cvv6kpeb5pmlqni3jmrljmavsdn5deso@import.calendar.google.com',
-  'airbnb-PORTIVY': '2nlubhr2o5ps3n3ok5inntfnmo7gf5b7@import.calendar.google.com',
+  'import-BAS': AIRBNB_IMPORT_CALENDARS.BAS,
+  'import-HAUT': AIRBNB_IMPORT_CALENDARS.HAUT,
+  'import-PORTIVY': AIRBNB_IMPORT_CALENDARS.PORTIVY,
 };
 
 app.get('/api/diag', async (_req, res) => {
@@ -126,6 +229,9 @@ app.get('/api/diag', async (_req, res) => {
     const checks = { sheet: await probe(`https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent('HAUT!A1')}`) };
     for (const [name, id] of Object.entries(DIAG_CALENDARS)) {
       checks[name] = await probe(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(id)}/events?maxResults=1`);
+    }
+    for (const [house, url] of Object.entries(AIRBNB_ICS_URLS)) {
+      checks[`ics-${house}`] = url ? (await fetch(url)).status : 'non configuré (repli import Google)';
     }
     res.json({ serviceAccount: client_email || null, checks });
   } catch (err) {
