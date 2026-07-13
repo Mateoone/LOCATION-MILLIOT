@@ -125,10 +125,10 @@ export function SimpleCalendar({ data, location, externalEvents, loadingExternal
       alert(`Les dates ${format(evt.start, 'dd/MM/yyyy')} ➔ ${format(evt.end, 'dd/MM/yyyy')} ont été bloquées sur Airbnb avec succès (via Google Agenda).`);
     } catch (e: any) {
       let msg = e.message;
+      // Depuis la v3.0, c'est le compte de service du serveur qui écrit dans
+      // les agendas — c'est donc SON email qu'il faut autoriser en écriture.
       if (msg.includes("writer access") || msg.includes("403")) {
-        msg = "Vous n'avez pas les droits d'écriture sur cet agenda Google.\n\nVeuillez demander au propriétaire de l'agenda de le partager avec votre adresse email avec le niveau d'autorisation 'Apporter des modifications aux événements'.";
-      } else {
-        msg += "\n\nAssurez-vous d'avoir accepté les permissions d'agenda lors de la connexion.";
+        msg = "Le compte de service n'a pas les droits d'écriture sur cet agenda Google.\n\nDans Google Agenda (compte propriétaire), ouvrez les paramètres de l'agenda de cette maison → « Partager avec des personnes spécifiques » → passez 58899663812-compute@developer.gserviceaccount.com au niveau « Apporter des modifications aux événements ».";
       }
       alert("Erreur lors de l'ajout au calendrier Google:\n\n" + msg);
     } finally {
